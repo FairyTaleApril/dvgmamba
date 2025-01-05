@@ -12,7 +12,8 @@ import torch.nn.functional as F
 import torchvision
 import timm
 import transformers
-from transformers import PreTrainedModel, GPT2Model, AutoModel, Dinov2Backbone, DepthAnythingForDepthEstimation, set_seed
+from transformers import PreTrainedModel, GPT2Model, AutoModel, Dinov2Backbone, DepthAnythingForDepthEstimation, \
+    set_seed, MambaModel, MambaConfig
 from transformers.utils import ModelOutput
 from src.models.config_dvgformer import DVGFormerConfig
 from src.data.state_action_conversion import state_avg, state_std, action_avg, action_std, reverse_states_actions_tensor
@@ -244,11 +245,14 @@ class DVGFormerModel(PreTrainedModel):
         )
         self.embed_ln = nn.LayerNorm(config.hidden_size)
 
-        self.transformer = GPT2Model(config.gpt2_config)
-        # set the original positional embeddings to zero
-        self.transformer.wpe.weight.data.zero_()
-        # turn off requires_grad for the original positional embeddings
-        self.transformer.wpe.requires_grad_(False)
+        # self.transformer = GPT2Model(config.gpt2_config)
+        # # set the original positional embeddings to zero
+        # self.transformer.wpe.weight.data.zero_()
+        # # turn off requires_grad for the original positional embeddings
+        # self.transformer.wpe.requires_grad_(False)
+
+        mamba_config = MambaConfig(hidden_size=384, state_size=1, num_hidden_layers=6)
+        self.transformer = MambaModel(mamba_config)
 
         # binary classification for drone type, non-fpv vs fpv
         # take image features at t=0
@@ -577,16 +581,23 @@ class DVGFormerModel(PreTrainedModel):
         past_key_values = None if past_key_values is None else tuple(
             tuple(pkv.to(self.dtype) for pkv in pkvs) for pkvs in past_key_values)
         # we feed in the input embeddings (not word indices as in NLP) to the model
+        # transformer_outputs = self.transformer(
+        #     inputs_embeds=inputs_embeds,
+        #     past_key_values=past_key_values,
+        #     attention_mask=attention_mask,
+        #     position_ids=torch.zeros_like(position_ids),
+        #     use_cache=use_cache,
+        #     output_attentions=output_attentions,
+        #     output_hidden_states=output_hidden_states,
+        # )
+        # hidden_states = transformer_outputs[0]
         transformer_outputs = self.transformer(
             inputs_embeds=inputs_embeds,
-            past_key_values=past_key_values,
             attention_mask=attention_mask,
-            position_ids=torch.zeros_like(position_ids),
             use_cache=use_cache,
-            output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
         )
-        hidden_states = transformer_outputs[0]
+        hidden_states = transformer_outputs['last_hidden_state']
 
         # get predictions
         # input:    image * n_token_image, (state, action) * n_action_to_predict
@@ -660,9 +671,9 @@ class DVGFormerModel(PreTrainedModel):
             action_preds=action_preds,
             stop_preds=stop_preds,
             future_action_preds=future_action_preds,
-            past_key_values=transformer_outputs.past_key_values,
+            # past_key_values=transformer_outputs.past_key_values,
             hidden_states=transformer_outputs.hidden_states,
-            attentions=transformer_outputs.attentions,
+            # attentions=transformer_outputs.attentions,
         )
 
     def _reverse_states_actions(

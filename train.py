@@ -1,6 +1,7 @@
 import sys
 import os
 import json
+import warnings
 import shutil
 import datetime
 import argparse
@@ -17,6 +18,8 @@ from blender_eval import blender_simulation
 # torch.inverse multi-threading RuntimeError: lazy wrapper should be called at most once
 # https://github.com/pytorch/pytorch/issues/90613#issuecomment-1817307008
 torch.inverse(torch.ones((1, 1), device="cuda:0"))
+
+warnings.filterwarnings("ignore")
 
 
 def main(args):
@@ -159,15 +162,13 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description='training script for DVGFormer')
     # data settings
-    parser.add_argument('--root', type=str, default='youtube_drone_videos')
-    parser.add_argument('--hdf5_fname', type=str,
-                        default='dataset_mini.h5')
+    parser.add_argument('--root', type=str, default='/media/jinpeng-yu/Data/dvg_data')
+    parser.add_argument('--hdf5_fname', type=str, default='dataset_mini.h5')
     # model settings
     parser.add_argument('--fps', type=int, default=3)
     parser.add_argument('--max_model_frames', type=int, default=150)
     parser.add_argument('--n_future_frames', type=int, default=15)
-    parser.add_argument('--drone_types', type=str,
-                        default='fpv', choices=['fpv', 'non-fpv', 'both'])
+    parser.add_argument('--drone_types', type=str, default='fpv', choices=['fpv', 'non-fpv', 'both'])
     parser.add_argument('--n_layer', type=int, default=12)
     parser.add_argument('--n_head', type=int, default=6)
     parser.add_argument('--n_token_noise', type=int, default=1)
@@ -176,34 +177,25 @@ if __name__ == '__main__':
     parser.add_argument('--n_token_state', type=int, default=1)
     parser.add_argument('--n_token_boa', type=int, default=1)
     parser.add_argument('--n_token_action', type=int, default=1)
-    parser.add_argument('--fix_image_width',
-                        type=lambda x: bool(strtobool(x)), default=True)
-    parser.add_argument('--use_depth',
-                        type=lambda x: bool(strtobool(x)), default=True)
-    parser.add_argument('--prediction_option',
-                        type=str, default='iterative', choices=['iterative', 'one-shot'])
-    parser.add_argument('--action_option',
-                        type=str, default='dense', choices=['dense', 'sparse'])
-    parser.add_argument('--motion_option',
-                        type=str, default='local', choices=['local', 'global'])
+    parser.add_argument('--fix_image_width', type=lambda x: bool(strtobool(x)), default=True)
+    parser.add_argument('--use_depth', type=lambda x: bool(strtobool(x)), default=True)
+    parser.add_argument('--prediction_option', type=str, default='iterative', choices=['iterative', 'one-shot'])
+    parser.add_argument('--action_option', type=str, default='dense', choices=['dense', 'sparse'])
+    parser.add_argument('--motion_option', type=str, default='local', choices=['local', 'global'])
     parser.add_argument('--loss_coef_drone_type', type=float, default=0)
     parser.add_argument('--loss_coef_state', type=float, default=0)
     parser.add_argument('--loss_coef_action', type=float, default=1)
     parser.add_argument('--loss_coef_stop', type=float, default=0)
     parser.add_argument('--loss_coef_future', type=float, default=0)
     # augmentation settings
-    parser.add_argument('--random_horizontal_flip',
-                        type=lambda x: bool(strtobool(x)), default=True)
-    parser.add_argument('--random_scaling',
-                        type=lambda x: bool(strtobool(x)), default=True)
-    parser.add_argument('--random_temporal_crop',
-                        type=lambda x: bool(strtobool(x)), default=True)
-    parser.add_argument('--random_color_jitter',
-                        type=lambda x: bool(strtobool(x)), default=True)
+    parser.add_argument('--random_horizontal_flip', type=lambda x: bool(strtobool(x)), default=True)
+    parser.add_argument('--random_scaling', type=lambda x: bool(strtobool(x)), default=True)
+    parser.add_argument('--random_temporal_crop', type=lambda x: bool(strtobool(x)), default=True)
+    parser.add_argument('--random_color_jitter', type=lambda x: bool(strtobool(x)), default=True)
     # training settings
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--epochs', type=int, default=10)
-    parser.add_argument('--batch_size', type=int, default=32)
+    parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--learning_rate', type=float, default=1e-4)
     parser.add_argument('--gradient_accumulation_steps', type=int, default=4)
     parser.add_argument('--num_workers', type=int, default=4)

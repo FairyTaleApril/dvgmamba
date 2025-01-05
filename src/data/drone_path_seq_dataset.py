@@ -555,7 +555,7 @@ def main():
     set_seed(0)
     # logging.basicConfig(level=logging.DEBUG)
     motion_option = 'global'
-    dataset = DronePathSequenceDataset('youtube_drone_videos',
+    dataset = DronePathSequenceDataset('/media/jinpeng-yu/Data/dvg_data',
                                        'dataset_mini.h5',
                                        #    resolution=(1080, 1920),
                                        motion_option=motion_option,

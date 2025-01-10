@@ -259,8 +259,7 @@ def main():
     import numpy as np
     import pandas as pd
 
-    df = pd.DataFrame(np.random.randint(
-        0, 100, size=(100, 4)), columns=list('ABCD'))
+    df = pd.DataFrame(np.random.randint(0, 100, size=(100, 4)), columns=list('ABCD'))
     rand_array = np.random.randn(100, 4)
     # Use the real filesystem
     # real_fs = FlexibleFileSystem('demo/8jT9ygmMvMg/scene00001_0')
@@ -275,50 +274,50 @@ def main():
     #     df.to_csv(f)
 
     # Mount .tar.gz content into memory and treat it as if it were located under 'virtual_dir'
-    memory_fs = FlexibleFileSystem('demo/8jT9ygmMvMg/scene00001_0.tar.gz')
-    print(memory_fs.exists('demo/8jT9ygmMvMg/scene00001_0/colmap'))
-    print(memory_fs.listdir('demo/8jT9ygmMvMg/scene00001_0/sparse'))
-    with memory_fs.open('demo/8jT9ygmMvMg/scene00001_0/np_temp1.txt', 'w') as f:
-        np.savetxt(f, rand_array)
-    with memory_fs.open('demo/8jT9ygmMvMg/scene00001_0/pd_temp1.csv', 'w') as f:
-        df.to_csv(f)
-    with memory_fs.open('demo/8jT9ygmMvMg/scene00001_0/pd_temp1.csv', 'r') as f:
-        df_ = pd.read_csv(f, index_col=0)
-    memory_fs.remove('demo/8jT9ygmMvMg/scene00001_0/pd_temp1.csv')
-    memory_fs.writeback()
-    with memory_fs.open('demo/8jT9ygmMvMg/scene00001_0/np_temp1.txt', 'r') as f:
-        rand_array_ = np.loadtxt(f)
-    memory_fs.close()
-
-    def print_all_names_and_items(name, obj):
-        print(name, type(obj))
-
-    memory_fs = FlexibleFileSystem('demo/0jC-sW5l4_g/scene00001_0.h5')
-    with h5py.File('demo/0jC-sW5l4_g/scene00001_0.h5', 'r') as hdf:
-        hdf.visititems(print_all_names_and_items)
-        pass
-    print(memory_fs.exists('demo/0jC-sW5l4_g/scene00001_0/colmap'))
-    print(memory_fs.listdir('demo/0jC-sW5l4_g/scene00001_0/sparse'))
-    with memory_fs.open('demo/0jC-sW5l4_g/scene00001_0/np_temp1.txt', 'w') as f:
-        np.savetxt(f, rand_array)
-    with memory_fs.open('demo/0jC-sW5l4_g/scene00001_0/pd_temp1.csv', 'w') as f:
-        df.to_csv(f)
-    with memory_fs.open('demo/0jC-sW5l4_g/scene00001_0/pd_temp1.csv', 'r') as f:
-        df_ = pd.read_csv(f, index_col=0)
-    memory_fs.remove('demo/0jC-sW5l4_g/scene00001_0/pd_temp1.csv')
-    memory_fs.remove('demo/0jC-sW5l4_g/scene00001_0/colmap')
-    memory_fs.remove('demo/0jC-sW5l4_g/scene00001_0/sparse/1')
-    memory_fs.writeback()
-    print(memory_fs.listdir('demo/0jC-sW5l4_g/scene00001_0'))
-    with memory_fs.open('demo/0jC-sW5l4_g/scene00001_0/np_temp1.txt', 'r') as f:
-        rand_array_ = np.loadtxt(f)
-    with h5py.File('demo/0jC-sW5l4_g/scene00001_0.h5', 'r') as hdf:
-        hdf.visititems(print_all_names_and_items)
-        pass
-
-    memory_fs = FlexibleFileSystem(
-        'youtube_drone_videos/filter_results_2024-03-30_23-57-41.tar')
-    print(len(memory_fs.listdir('youtube_drone_videos')))
+    # memory_fs = FlexibleFileSystem('demo/8jT9ygmMvMg/scene00001_0.tar.gz')
+    # print(memory_fs.exists('demo/8jT9ygmMvMg/scene00001_0/colmap'))
+    # print(memory_fs.listdir('demo/8jT9ygmMvMg/scene00001_0/sparse'))
+    # with memory_fs.open('demo/8jT9ygmMvMg/scene00001_0/np_temp1.txt', 'w') as f:
+    #     np.savetxt(f, rand_array)
+    # with memory_fs.open('demo/8jT9ygmMvMg/scene00001_0/pd_temp1.csv', 'w') as f:
+    #     df.to_csv(f)
+    # with memory_fs.open('demo/8jT9ygmMvMg/scene00001_0/pd_temp1.csv', 'r') as f:
+    #     df_ = pd.read_csv(f, index_col=0)
+    # memory_fs.remove('demo/8jT9ygmMvMg/scene00001_0/pd_temp1.csv')
+    # memory_fs.writeback()
+    # with memory_fs.open('demo/8jT9ygmMvMg/scene00001_0/np_temp1.txt', 'r') as f:
+    #     rand_array_ = np.loadtxt(f)
+    # memory_fs.close()
+    #
+    # def print_all_names_and_items(name, obj):
+    #     print(name, type(obj))
+    #
+    # memory_fs = FlexibleFileSystem('demo/0jC-sW5l4_g/scene00001_0.h5')
+    # with h5py.File('demo/0jC-sW5l4_g/scene00001_0.h5', 'r') as hdf:
+    #     hdf.visititems(print_all_names_and_items)
+    #     pass
+    # print(memory_fs.exists('demo/0jC-sW5l4_g/scene00001_0/colmap'))
+    # print(memory_fs.listdir('demo/0jC-sW5l4_g/scene00001_0/sparse'))
+    # with memory_fs.open('demo/0jC-sW5l4_g/scene00001_0/np_temp1.txt', 'w') as f:
+    #     np.savetxt(f, rand_array)
+    # with memory_fs.open('demo/0jC-sW5l4_g/scene00001_0/pd_temp1.csv', 'w') as f:
+    #     df.to_csv(f)
+    # with memory_fs.open('demo/0jC-sW5l4_g/scene00001_0/pd_temp1.csv', 'r') as f:
+    #     df_ = pd.read_csv(f, index_col=0)
+    # memory_fs.remove('demo/0jC-sW5l4_g/scene00001_0/pd_temp1.csv')
+    # memory_fs.remove('demo/0jC-sW5l4_g/scene00001_0/colmap')
+    # memory_fs.remove('demo/0jC-sW5l4_g/scene00001_0/sparse/1')
+    # memory_fs.writeback()
+    # print(memory_fs.listdir('demo/0jC-sW5l4_g/scene00001_0'))
+    # with memory_fs.open('demo/0jC-sW5l4_g/scene00001_0/np_temp1.txt', 'r') as f:
+    #     rand_array_ = np.loadtxt(f)
+    # with h5py.File('demo/0jC-sW5l4_g/scene00001_0.h5', 'r') as hdf:
+    #     hdf.visititems(print_all_names_and_items)
+    #     pass
+    #
+    # memory_fs = FlexibleFileSystem(
+    #     'youtube_drone_videos/filter_results_2024-03-30_23-57-41.tar')
+    # print(len(memory_fs.listdir('youtube_drone_videos')))
 
 
 if __name__ == '__main__':

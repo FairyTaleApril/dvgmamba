@@ -1,10 +1,5 @@
-from collections import OrderedDict
-from typing import Mapping
-from packaging import version
 import numpy as np
-import torch
-from transformers import PretrainedConfig, GPT2Config, logging, CONFIG_MAPPING
-
+from transformers import PretrainedConfig, GPT2Config, logging, MambaConfig
 
 logger = logging.get_logger(__name__)
 
@@ -56,9 +51,9 @@ class DVGFormerConfig(PretrainedConfig):
             # 'keyframe': use GT state in key frame (3 fps) to unroll the actions (15 fps)
             # 'none': execute generated actions (for simulation eval)
             test_gt_forcing='allframe',
+            attention_model='Mamba',
             **kwargs,
     ):
-
         self.vision_backbone = vision_backbone
         if 'efficientnet' in vision_backbone:
             patch_size = 1
@@ -79,6 +74,7 @@ class DVGFormerConfig(PretrainedConfig):
             raise ValueError(
                 f'Unsupported architecture "{vision_backbone}".'
             )
+
         self.use_depth = use_depth
 
         self.motion_option = motion_option
@@ -198,15 +194,25 @@ class DVGFormerConfig(PretrainedConfig):
         self.test_gt_forcing = test_gt_forcing
 
         # transformer config
-        kwargs.pop('gpt2_config', None)
-        self.gpt2_config = GPT2Config(
-            n_embd=hidden_size,
-            n_positions=(max_model_frames // self.fps_downsample * self.n_token_frame +
-                         self.n_token_quality + self.n_token_drone_type + self.n_token_noise),  # max length of the sequence
-            n_layer=n_layer,
-            n_head=n_head,
-            attn_implementation=attn_implementation,
-            **kwargs)
+        # kwargs.pop('gpt2_config', None)
+        self.attention_model = attention_model
+        if self.attention_model == 'GPT2':
+            self.attention_model_config = GPT2Config(
+                n_embd=hidden_size,
+                n_positions=(max_model_frames // self.fps_downsample * self.n_token_frame +
+                             self.n_token_quality + self.n_token_drone_type + self.n_token_noise),  # max length of the sequence
+                n_layer=n_layer,
+                n_head=n_head,
+                attn_implementation=attn_implementation,
+                **kwargs)
+        elif self.attention_model == 'Mamba':
+            self.attention_model_config = MambaConfig(
+                vocab_size=50257,
+                hidden_size=hidden_size,
+                state_size=4,
+                num_hidden_layers=6,
+                residual_in_fp32=False,
+                **kwargs)
         self.hidden_size = hidden_size
 
         super().__init__(**kwargs)

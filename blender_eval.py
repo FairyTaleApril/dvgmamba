@@ -15,8 +15,8 @@ from src.utils.quaternion_operations import convert_to_local_frame
 from src.data.state_action_conversion import state_avg, state_std, action_avg, action_std
 
 
-infinigen_root = 'infinigen'
-blosm_root = 'blosm'
+infinigen_root = '/media/jinpeng-yu/Data/dvg_data/infinigen'
+blosm_root = '/media/jinpeng-yu/Data/dvg_data/blosm'
 
 
 def expand_episode(env, config, model, run_name, drone_type=1, seed=None, random_init_pose=False, re_render=True):
@@ -222,7 +222,7 @@ def blender_simulation(config, model, logdir, num_runs=40, video_duration=10, re
                 scene_fpaths.append(infinigen_fpaths[scene][i])
         pass
     num_repeats = np.ones(len(scene_fpaths), dtype=int) * 3
-    num_repeats[:len(blosm_fpaths)] = 10
+    num_repeats[:len(blosm_fpaths)] = 5
 
     results = []
     for i in tqdm.tqdm(range(min(num_runs, len(scene_fpaths)))):

@@ -31,28 +31,26 @@ def main(args):
     # check if in debug mode
     gettrace = getattr(sys, 'gettrace', None)
     if gettrace():
-        print('Hmm, Big Debugger is watching me')
         is_debug = True
         torch.autograd.set_detect_anomaly(True)
-    else:
-        print('No sys.gettrace')
-        is_debug = False
 
-    if is_debug:
         args.epochs = 1
         args.num_workers = 0
         args.num_runs = 1
+    else:
+        is_debug = False
 
     model_kwargs = dict(vars(args))
     for key in ['random_horizontal_flip', 'random_scaling', 'random_temporal_crop', 'random_color_jitter',
                 'seed', 'epochs', 'batch_size', 'learning_rate', 'gradient_accumulation_steps', 'num_workers', 'num_runs']:
         model_kwargs.pop(key)
+
     if model_kwargs['fix_image_width']:
         model_kwargs['image_featmap_shape'] = (5, 9)
     else:
         model_kwargs['image_featmap_shape'] = (7, 7)
-    model_kwargs['drone_types'] = [0, 1] if model_kwargs['drone_types'] == 'both' else [
-        1] if model_kwargs['drone_types'] == 'fpv' else [0]
+    model_kwargs['drone_types'] = [0, 1] if model_kwargs['drone_types'] == 'both' \
+        else [1] if model_kwargs['drone_types'] == 'fpv' else [0]
 
     str_token = (f'{f"n{args.n_token_noise}" if args.n_token_noise else ""}'
                  f'{f"q{args.n_token_quality}"if args.n_token_quality else ""}'
@@ -60,7 +58,7 @@ def main(args):
                  f's{args.n_token_state}img{np.prod(model_kwargs["image_featmap_shape"])}'
                  f'{f"boa{args.n_token_boa}" if args.n_token_boa else ""}'
                  f'a{args.prediction_option.upper()[0]}{args.action_option.upper()[0]}{args.n_token_action}')
-    str_3d = ("depth2d" if args.use_depth else '')
+    str_3d = "depth2d" if args.use_depth else ''
     str_loss = (f'loss{f"s{args.loss_coef_state}" if args.loss_coef_state else ""}'
                 f'{f"a{args.loss_coef_action}" if args.loss_coef_action else ""}'
                 f'{f"stop{args.loss_coef_stop}" if args.loss_coef_stop else ""}'
@@ -72,20 +70,21 @@ def main(args):
               f'{str_3d}-{str_loss}-{str_aug}')
 
     # setup logdir
-    run_name = randomname.generate()
+    current_time = datetime.datetime.now().strftime("%Y-%m-%d %H-%M")
+    run_name = f'{args.attention_model}-{current_time}'
     logdir = f'logs/{"DEBUG_" if is_debug else ""}{logdir}-{run_name}'
     os.makedirs(logdir, exist_ok=True)
     # make a copy of all python scripts
-    copy_tree('src', f'{logdir}/scripts/src')
-    for script in os.listdir('.'):
-        if script.split('.')[-1] == 'py':
-            dst_file = f'{logdir}/scripts/{os.path.basename(script)}'
-            shutil.copyfile(script, dst_file)
+    # copy_tree('src', f'{logdir}/scripts/src')
+    # for script in os.listdir('.'):
+    #     if script.split('.')[-1] == 'py':
+    #         dst_file = f'{logdir}/scripts/{os.path.basename(script)}'
+    #         shutil.copyfile(script, dst_file)
     print(logdir)
     print(args)
 
     # save args as json
-    with open(f'{logdir}/args-{datetime.datetime.today():%Y-%m-%d_%H-%M-%S}.json', 'w') as f:
+    with open(f'{logdir}/args-{run_name}.json', 'w') as f:
         json.dump(vars(args), f, indent=4)
 
     config = DVGFormerConfig(
@@ -118,6 +117,9 @@ def main(args):
     model = DVGFormerModel(config)
     # revert torch default dtype
     torch.set_default_dtype(cur_dtype)
+
+    total_params = sum(p.numel() for p in model.parameters())
+    print(f"total number of params: {total_params}")
 
     training_args = TrainingArguments(
         output_dir=logdir,
@@ -159,11 +161,11 @@ def main(args):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(
-        description='training script for DVGFormer')
+    parser = argparse.ArgumentParser(description='training script for DVGFormer')
+    parser.add_argument('--attention_model', type=str, default='Mamba')
     # data settings
     parser.add_argument('--root', type=str, default='/media/jinpeng-yu/Data/dvg_data')
-    parser.add_argument('--hdf5_fname', type=str, default='dataset_mini.h5')
+    parser.add_argument('--hdf5_fname', type=str, default='dataset_medium_fpv.h5')
     # model settings
     parser.add_argument('--fps', type=int, default=3)
     parser.add_argument('--max_model_frames', type=int, default=150)
@@ -194,11 +196,11 @@ if __name__ == '__main__':
     parser.add_argument('--random_color_jitter', type=lambda x: bool(strtobool(x)), default=True)
     # training settings
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--epochs', type=int, default=10)
+    parser.add_argument('--epochs', type=int, default=2)  # 50
     parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--learning_rate', type=float, default=1e-4)
     parser.add_argument('--gradient_accumulation_steps', type=int, default=4)
-    parser.add_argument('--num_workers', type=int, default=4)
+    parser.add_argument('--num_workers', type=int, default=1)
     # evaluation settings
     parser.add_argument('--num_runs', type=int, default=50)
 

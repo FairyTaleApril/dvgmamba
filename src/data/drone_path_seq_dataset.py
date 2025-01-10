@@ -2,11 +2,11 @@ import os
 import re
 import time
 import logging
-import tqdm
 import json
 from typing import Dict, Optional, Sequence, List
 from PIL import Image
 import numpy as np
+from tqdm import tqdm
 from transforms3d.quaternions import qinverse, qconjugate, qmult, qnorm, quat2mat, mat2quat, quat2axangle, axangle2quat, nearly_equivalent
 from transforms3d.euler import euler2quat, quat2euler, euler2mat, mat2euler
 import pandas as pd
@@ -131,7 +131,8 @@ class DronePathSequenceDataset(Dataset):
         self.data_list = []
         self.points_info = []
         total_length = 0
-        for video_id in tqdm.tqdm(sorted(self.h5_fs.listdir(self.root))):
+
+        for video_id in tqdm(sorted(self.h5_fs.listdir(self.root))):
             try:
                 with self.h5_fs.open(f'{self.root}/{video_id}/data.json') as f:
                     metadata = json.load(f)
@@ -139,6 +140,7 @@ class DronePathSequenceDataset(Dataset):
                 video_stat['num_clips'] = 0
                 video_stat['quality'] = (video_stat['view_count'] /
                                          video_stat['duration'])
+
                 if not video_stat['is_drone'] or video_stat['has_skip_words']:
                     continue
                 if self.skip_portrait_videos and not video_stat['is_landscape']:
@@ -190,6 +192,7 @@ class DronePathSequenceDataset(Dataset):
                              'end_idx': min(start_idx + self.max_model_frames, len(recons_array))})
             self.video_stats[video_id]['num_clips'] = \
                 len(self.data_list) - current_num_clips
+
         # log the overall stats
         stat_keys = ['view_count', 'like_count', 'comment_count', 'duration',
                      'is_fpv', 'num_clips', 'quality']
@@ -229,10 +232,8 @@ class DronePathSequenceDataset(Dataset):
         end_idx = self.data_list[index]['end_idx']
         video_id = result_fpath.split('/')[-2]
         video_stats = self.video_stats[video_id]
-        scene = os.path.basename(result_fpath).split(
-            '-')[0].replace('scene', '')
-        recons_index = int(os.path.basename(result_fpath).split(
-            '-')[1].replace('recons', ''))
+        scene = os.path.basename(result_fpath).split('-')[0].replace('scene', '')
+        recons_index = int(os.path.basename(result_fpath).split('-')[1].replace('recons', ''))
         is_fpv = int(video_stats['is_fpv'])
 
         # recons info
@@ -257,13 +258,12 @@ class DronePathSequenceDataset(Dataset):
             W = int(W * scale)
         else:
             scale = 1.0
-        # random termporal crop
+        # random temporal crop
         if (self.max_data_frames == self.max_model_frames and
                 np.random.rand() < self.random_temporal_crop / 2):
             # reduce the sequence length by start_offset, end_offset
             seq_length = end_idx - start_idx
-            start_offset = np.random.randint(
-                0, seq_length * 0.2 + 1)
+            start_offset = np.random.randint(0, seq_length * 0.2 + 1)
             start_offset = start_offset // self.fps_downsample * self.fps_downsample
             start_idx += start_offset
             # end_offset = np.random.randint(
@@ -553,104 +553,12 @@ def main():
     from transformers import set_seed
 
     set_seed(0)
-    # logging.basicConfig(level=logging.DEBUG)
-    motion_option = 'global'
     dataset = DronePathSequenceDataset('/media/jinpeng-yu/Data/dvg_data',
-                                       'dataset_mini.h5',
-                                       #    resolution=(1080, 1920),
-                                       motion_option=motion_option,
-                                       #    random_horizontal_flip=True,
-                                       random_scaling=True,
-                                       random_temporal_crop=True,
-                                       #    max_model_frames=30,
-                                       )
+                                       'dataset_medium_fpv.h5')
     print(len(dataset))
-    dataset.__getitem__(1, visualize=True)
-    dataset.__getitem__(76, visualize=True)
-    # indices = [np.random.randint(len(dataset)) for _ in range(20)]
-    # for idx in indices:
-    #     dataset.__getitem__(idx, visualize=False)
-    #     pass
+    # dataset.__getitem__(1, visualize=True)
+
     return
-
-    # dataset statistics
-    # tvec_avgs, tvec_stds = [], []
-    # qvec_avgs, qvec_stds = [], []
-    # v_avgs, v_stds = [], []
-    # omega_avgs, omega_stds = [], []
-    # for i in tqdm.tqdm(range(2000)):
-    #     tvecs, qvecs, vs, omegas = dataset.__getitem__(i, visualize=False)
-    #     tvec_avgs.append(tvecs.mean())
-    #     tvec_stds.append(tvecs.std())
-    #     qvec_avgs.append(qvecs.mean())
-    #     qvec_stds.append(qvecs.std())
-    #     v_avgs.append(vs.mean())
-    #     v_stds.append(vs.std())
-    #     omega_avgs.append(omegas.mean())
-    #     omega_stds.append(omegas.std())
-    # tvec_avgs = np.stack(tvec_avgs)
-    # tvec_stds = np.stack(tvec_stds)
-    # qvec_avgs = np.stack(qvec_avgs)
-    # qvec_stds = np.stack(qvec_stds)
-    # v_avgs = np.stack(v_avgs)
-    # v_stds = np.stack(v_stds)
-    # omega_avgs = np.stack(omega_avgs)
-    # omega_stds = np.stack(omega_stds)
-    # print(f"{tvec_avgs.mean():.3f}\t{tvec_stds.mean():.3f}\t{tvec_avgs.min():.3f}\t{tvec_avgs.max():.3f}")
-    # print(f"{qvec_avgs.mean():.3f}\t{qvec_stds.mean():.3f}\t{qvec_avgs.min():.3f}\t{qvec_avgs.max():.3f}")
-    # print(f"{v_avgs.mean():.3f}\t{v_stds.mean():.3f}\t{v_avgs.min():.3f}\t{v_avgs.max():.3f}")
-    # print(f"{omega_avgs.mean():.3f}\t{omega_stds.mean():.3f}\t{omega_avgs.min():.3f}\t{omega_avgs.max():.3f}")
-    # return
-
-    dataloader = DataLoader(dataset, batch_size=32, shuffle=False,
-                            collate_fn=collate_fn_video_drone_path_dataset,
-                            num_workers=0, drop_last=True)
-    batch = next(iter(dataloader))
-    all_states = []
-    all_actions = []
-    all_stops = []
-    all_masks = []
-    all_lens = []
-    all_points = []
-    for i, batch in enumerate(tqdm.tqdm(dataloader)):
-        all_states.append(batch['states'].transpose(0, 1))
-        all_actions.append(batch['actions'].transpose(0, 1))
-        all_masks.append(batch['attention_mask'].transpose(0, 1))
-        all_stops.append(batch['stop_labels'].transpose(0, 1))
-        all_lens.extend(batch['seq_length'].tolist())
-        points = batch.get('pointcloud_labels', None)
-        if points is not None:
-            points = points[(points != -100).all(dim=-1)]
-            all_points.append(points)
-        if i == 10:
-            break
-        pass
-    all_states = padding(all_states).transpose(1, 2).flatten(0, 1)
-    all_actions = padding(all_actions).transpose(1, 2).flatten(0, 1)
-    all_masks = padding(all_masks).transpose(1, 2).flatten(0, 1)
-    all_stops = padding(all_stops).transpose(1, 2).flatten(0, 1)
-    all_states = all_states[all_masks == 1]
-    all_actions = all_actions[all_masks == 1]
-    all_stops = all_stops[all_masks == 1]
-    print(f'states: mean={all_states.mean(dim=[0, 1])}, '
-          f'std={all_states.std(dim=[0, 1])}')
-    print(f'actions: mean={all_actions.mean(dim=[0, 1])}, '
-          f'std={all_actions.std(dim=[0, 1])}')
-    print(f'stops: mean={all_stops.mean()}')
-    print(f'lengths: {np.mean(all_lens)}')
-    if len(all_points) > 0:
-        all_points = torch.cat(all_points)
-        all_points = all_points.clamp(-1e4, 1e4)
-        print(
-            f'points: mean={all_points.mean(dim=0)}, std={all_points.std(dim=0)}')
-    tvec_norms = all_states[:, :3].norm(dim=-1)
-    v_norms = all_actions[:, :3].norm(dim=-1)
-    omega_norms = all_actions[:, 3:].norm(dim=-1)
-    print(
-        f'norms: tvec={tvec_norms.mean()}, v={v_norms.mean()}, omega={omega_norms.mean()}')
-    # for i in tqdm.tqdm(range(len(dataset))):
-    #     dataset.__getitem__(i)
-    pass
 
 
 if __name__ == '__main__':

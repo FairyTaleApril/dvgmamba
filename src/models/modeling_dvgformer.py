@@ -2,6 +2,7 @@ from typing import Optional, Tuple, Union, Dict, Sequence, List
 from functools import partial
 from dataclasses import dataclass
 import matplotlib.pyplot as plt
+from dash.exceptions import InvalidConfig
 from einops import pack, unpack, repeat, reduce, rearrange, einsum
 import numpy as np
 from transforms3d.quaternions import qinverse, qconjugate, qmult, qnorm, quat2mat, mat2quat, quat2axangle, axangle2quat, nearly_equivalent
@@ -245,14 +246,17 @@ class DVGFormerModel(PreTrainedModel):
         )
         self.embed_ln = nn.LayerNorm(config.hidden_size)
 
-        # self.transformer = GPT2Model(config.gpt2_config)
-        # # set the original positional embeddings to zero
-        # self.transformer.wpe.weight.data.zero_()
-        # # turn off requires_grad for the original positional embeddings
-        # self.transformer.wpe.requires_grad_(False)
-
-        mamba_config = MambaConfig(hidden_size=384, state_size=1, num_hidden_layers=6)
-        self.transformer = MambaModel(mamba_config)
+        if self.config.attention_model == 'GPT2':
+            self.transformer = GPT2Model(config.attention_model_config)
+            # set the original positional embeddings to zero
+            self.transformer.wpe.weight.data.zero_()
+            # turn off requires_grad for the original positional embeddings
+            self.transformer.wpe.requires_grad_(False)
+        elif self.config.attention_model == 'Mamba':
+            # self.transformer = Mamba()
+            self.transformer = MambaModel(config.attention_model_config)
+        else:
+            raise InvalidConfig
 
         # binary classification for drone type, non-fpv vs fpv
         # take image features at t=0
@@ -515,9 +519,7 @@ class DVGFormerModel(PreTrainedModel):
         '''
         # bool indicators
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
+        output_hidden_states = output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
 
         # L: stacked_length (padded_length * n_token_frame)
         # l: padded_length
@@ -569,8 +571,7 @@ class DVGFormerModel(PreTrainedModel):
         inputs_embeds = self.embed_ln(inputs_embeds)
         # Note: we have kept the positional embeddings to 0 in the originial GPT2 model
         # token-level & frame-level positional embedding
-        prepend_length = (within_frame_pos ==
-                          self.config.ignore_value).sum(dim=1)[0].item()
+        prepend_length = (within_frame_pos == self.config.ignore_value).sum(dim=1)[0].item()
         inputs_embeds[:, :prepend_length] += self.prepend_pe[:prepend_length]
         inputs_embeds[:, prepend_length:] += torch.stack(
             [self.cross_frame_pe(position_ids[:, prepend_length:]),
@@ -581,23 +582,25 @@ class DVGFormerModel(PreTrainedModel):
         past_key_values = None if past_key_values is None else tuple(
             tuple(pkv.to(self.dtype) for pkv in pkvs) for pkvs in past_key_values)
         # we feed in the input embeddings (not word indices as in NLP) to the model
-        # transformer_outputs = self.transformer(
-        #     inputs_embeds=inputs_embeds,
-        #     past_key_values=past_key_values,
-        #     attention_mask=attention_mask,
-        #     position_ids=torch.zeros_like(position_ids),
-        #     use_cache=use_cache,
-        #     output_attentions=output_attentions,
-        #     output_hidden_states=output_hidden_states,
-        # )
-        # hidden_states = transformer_outputs[0]
-        transformer_outputs = self.transformer(
-            inputs_embeds=inputs_embeds,
-            attention_mask=attention_mask,
-            use_cache=use_cache,
-            output_hidden_states=output_hidden_states,
-        )
-        hidden_states = transformer_outputs['last_hidden_state']
+        if self.config.attention_model == 'GPT2':
+            transformer_outputs = self.transformer(
+                inputs_embeds=inputs_embeds,
+                past_key_values=past_key_values,
+                attention_mask=attention_mask,
+                position_ids=torch.zeros_like(position_ids),
+                use_cache=True,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+            )
+            hidden_states = transformer_outputs[0]
+        elif self.config.attention_model == 'Mamba':
+            # hidden_states = self.transformer(inputs_embeds)
+            transformer_outputs = self.transformer(
+                inputs_embeds=inputs_embeds
+            )
+            hidden_states = transformer_outputs[0]
+        else:
+            raise InvalidConfig
 
         # get predictions
         # input:    image * n_token_image, (state, action) * n_action_to_predict
@@ -665,16 +668,29 @@ class DVGFormerModel(PreTrainedModel):
                         loss_future_action * self.config.loss_coef_future) * sequence_mask
             loss = (loss_drone_type * self.config.loss_coef_drone_type +
                     seq_loss.mean())
-        return DVGFormerOutput(
-            loss=loss,
-            drone_type_preds=drone_type_preds,
-            action_preds=action_preds,
-            stop_preds=stop_preds,
-            future_action_preds=future_action_preds,
-            # past_key_values=transformer_outputs.past_key_values,
-            hidden_states=transformer_outputs.hidden_states,
-            # attentions=transformer_outputs.attentions,
-        )
+
+        if self.config.attention_model == 'GPT2':
+            return DVGFormerOutput(
+                loss=loss,
+                drone_type_preds=drone_type_preds,
+                action_preds=action_preds,
+                stop_preds=stop_preds,
+                future_action_preds=future_action_preds,
+                # past_key_values=transformer_outputs.past_key_values,
+                hidden_states=transformer_outputs.hidden_states,
+                # attentions=transformer_outputs.attentions,
+            )
+        elif self.config.attention_model == 'Mamba':
+            return DVGFormerOutput(
+                loss=loss,
+                drone_type_preds=drone_type_preds,
+                action_preds=action_preds,
+                stop_preds=stop_preds,
+                future_action_preds=future_action_preds,
+                hidden_states=hidden_states,
+            )
+        else:
+            raise InvalidConfig
 
     def _reverse_states_actions(
         self,

@@ -210,7 +210,7 @@ class DVGFormerConfig(PretrainedConfig):
                 hidden_size=hidden_size,
                 # state_size=4,
                 # num_hidden_layers=6,
-                residual_in_fp32=False,)
+                residual_in_fp32=False)
         self.hidden_size = hidden_size
 
         super().__init__(**kwargs)

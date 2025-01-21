@@ -79,8 +79,10 @@ class ImageTokenizer(nn.Module):
 
         # backbone
         # dinov2_vits14_reg
-        self.backbone = torch.hub.load(
-            'facebookresearch/dinov2', config.vision_backbone)
+        # self.backbone = torch.hub.load(
+        #     'facebookresearch/dinov2', config.vision_backbone)
+        self.backbone = torch.hub.load('/home/jinpeng-yu/.cache/torch/hub/facebookresearch_dinov2_main',
+                                       config.vision_backbone, source='local')
         self.backbone.eval()
         for parameter in self.backbone.parameters():
             parameter.requires_grad_(False)

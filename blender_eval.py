@@ -15,8 +15,8 @@ from src.utils.quaternion_operations import convert_to_local_frame
 from src.data.state_action_conversion import state_avg, state_std, action_avg, action_std
 
 
-infinigen_root = '/media/jinpeng-yu/Data/dvg_data/infinigen'
-blosm_root = '/media/jinpeng-yu/Data/dvg_data/blosm'
+infinigen_root = '/home/jinpeng-yu/Desktop/DVG_DATA/infinigen'
+blosm_root = '/home/jinpeng-yu/Desktop/DVG_DATA/blosm'
 
 
 def expand_episode(env, config, model, run_name, drone_type=1, seed=None, random_init_pose=False, re_render=True):

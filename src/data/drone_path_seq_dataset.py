@@ -553,7 +553,7 @@ def main():
     from transformers import set_seed
 
     set_seed(0)
-    dataset = DronePathSequenceDataset('/media/jinpeng-yu/Data/dvg_data',
+    dataset = DronePathSequenceDataset('/home/jinpeng-yu/Desktop/DVG_DATA',
                                        'dataset_medium_fpv.h5')
     print(len(dataset))
     # dataset.__getitem__(1, visualize=True)

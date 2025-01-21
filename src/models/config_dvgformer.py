@@ -207,12 +207,10 @@ class DVGFormerConfig(PretrainedConfig):
                 **kwargs)
         elif self.attention_model == 'Mamba':
             self.attention_model_config = MambaConfig(
-                vocab_size=50257,
                 hidden_size=hidden_size,
-                state_size=4,
-                num_hidden_layers=6,
-                residual_in_fp32=False,
-                **kwargs)
+                # state_size=4,
+                # num_hidden_layers=6,
+                residual_in_fp32=False,)
         self.hidden_size = hidden_size
 
         super().__init__(**kwargs)

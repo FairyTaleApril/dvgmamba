@@ -10,6 +10,7 @@ import randomname
 from distutils.dir_util import copy_tree
 import numpy as np
 import torch
+import wandb
 from transformers import Trainer, TrainingArguments, set_seed
 from src.models import DVGFormerConfig, DVGFormerModel
 from src.data.drone_path_seq_dataset import DronePathSequenceDataset, collate_fn_video_drone_path_dataset
@@ -23,6 +24,9 @@ warnings.filterwarnings("ignore")
 
 
 def main(args):
+    os.environ['WANDB_MODE'] = 'offline'
+    wandb.init(project='dvgformer')
+
     set_seed(args.seed)
 
     torch.backends.cuda.matmul.allow_tf32 = True
@@ -92,6 +96,16 @@ def main(args):
         test_gt_forcing='allframe',
         **model_kwargs)
 
+    # set torch default dtype to bfloat16
+    cur_dtype = torch.get_default_dtype()
+    torch.set_default_dtype(torch.bfloat16)
+    model = DVGFormerModel(config)
+    # revert torch default dtype
+    torch.set_default_dtype(cur_dtype)
+
+    total_params = sum(p.numel() for p in model.parameters())
+    print(f"total number of params: {total_params}")
+
     train_dataset = DronePathSequenceDataset(
         args.root,
         args.hdf5_fname,
@@ -110,16 +124,6 @@ def main(args):
         n_future_frames=config.n_future_frames,
         num_quantile_bins=config.num_quantile_bins,
     )
-
-    # set torch default dtype to bfloat16
-    cur_dtype = torch.get_default_dtype()
-    torch.set_default_dtype(torch.bfloat16)
-    model = DVGFormerModel(config)
-    # revert torch default dtype
-    torch.set_default_dtype(cur_dtype)
-
-    total_params = sum(p.numel() for p in model.parameters())
-    print(f"total number of params: {total_params}")
 
     training_args = TrainingArguments(
         output_dir=logdir,
@@ -162,10 +166,10 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='training script for DVGFormer')
-    parser.add_argument('--attention_model', type=str, default='Mamba')
+    parser.add_argument('--attention_model', type=str, default='GPT2', choices=['Mamba', 'GPT2'])
     # data settings
-    parser.add_argument('--root', type=str, default='/media/jinpeng-yu/Data/dvg_data')
-    parser.add_argument('--hdf5_fname', type=str, default='dataset_medium_fpv.h5')
+    parser.add_argument('--root', type=str, default='/home/jinpeng-yu/Desktop/DVG_DATA')
+    parser.add_argument('--hdf5_fname', type=str, default='dataset_mini.h5')
     # model settings
     parser.add_argument('--fps', type=int, default=3)
     parser.add_argument('--max_model_frames', type=int, default=150)
@@ -196,11 +200,11 @@ if __name__ == '__main__':
     parser.add_argument('--random_color_jitter', type=lambda x: bool(strtobool(x)), default=True)
     # training settings
     parser.add_argument('--seed', type=int, default=42)
-    parser.add_argument('--epochs', type=int, default=2)  # 50
+    parser.add_argument('--epochs', type=int, default=10)  # 10
     parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--learning_rate', type=float, default=1e-4)
     parser.add_argument('--gradient_accumulation_steps', type=int, default=4)
-    parser.add_argument('--num_workers', type=int, default=1)
+    parser.add_argument('--num_workers', type=int, default=4)
     # evaluation settings
     parser.add_argument('--num_runs', type=int, default=50)
 

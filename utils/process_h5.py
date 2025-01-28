@@ -72,20 +72,33 @@ def delete_h5_contents(h5_file, group):
             print(f"{item} does not exist")
 
 
-def main():
-    root_path = '/home/jinpeng-yu/Desktop'
-    h5_file_path = os.path.join(root_path, 'mini_test.h5')
-    output_folder = os.path.join(root_path, 'extracted_h5')
+def get_top_level_groups(file_path):
+    with h5py.File(file_path, 'r') as h5_file:
+        top_level_groups = list(h5_file.keys())
+    return top_level_groups
 
-    # root_path = '/media/jinpeng-yu/Data/dvg_data'
-    # h5_file_path = os.path.join(root_path, 'dataset_medium_fpv.h5')
-    # fpv = ['-QpX_T1POtU', '-OxY2jimHeQ']
-    # random_delete = random.sample(fpv, len(fpv) - 5000)
 
-    with h5py.File(h5_file_path, 'r+') as h5_file:
-        extract_h5_contents(h5_file, output_folder)
-        # delete_h5_contents(h5_file, fpv)
+def main(mode='delete'):
+    root_path = '/media/jinpeng-yu/Data/dvg_data'
+    h5_file_path = os.path.join(root_path, 'dataset_small_fpv.h5')
+
+    top_level_groups = get_top_level_groups(h5_file_path)
+    print(len(top_level_groups))
+
+    if mode == 'delete':
+        save_num = 2000
+        random_delete = random.sample(top_level_groups, len(top_level_groups) - save_num)
+
+        with h5py.File(h5_file_path, 'r+') as h5_file:
+            delete_h5_contents(h5_file, random_delete)
+    elif mode == 'extract':
+        output_folder = os.path.join(root_path, 'dataset_small_fpv')
+
+        with h5py.File(h5_file_path, 'r+') as h5_file:
+            extract_h5_contents(h5_file, output_folder)
+    else:
+        return
 
 
 if __name__ == "__main__":
-    main()
+    main(mode='none')

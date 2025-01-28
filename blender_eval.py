@@ -1,18 +1,15 @@
 import os
-import threading
-import time
-import bpy
 import tqdm
-from transforms3d.quaternions import qinverse, qconjugate, qmult, qnorm, quat2mat, mat2quat, quat2axangle, axangle2quat, nearly_equivalent
-from transforms3d.euler import euler2quat, quat2euler, euler2mat, mat2euler
 from PIL import Image
 import numpy as np
 import torch
 import torchvision.transforms as T
-from src.blender.blender_camera_env import BlenderCameraEnv
-from src.models import DVGFormerConfig, DVGFormerModel
-from src.utils.quaternion_operations import convert_to_local_frame
-from src.data.state_action_conversion import state_avg, state_std, action_avg, action_std
+from setuptools.dist import sequence
+
+from blender.blender_camera_env import BlenderCameraEnv
+from models.modeling_dvgformer import DVGFormerModel
+from utils.quaternion_operations import convert_to_local_frame
+from data.state_action_conversion import state_avg, state_std, action_avg, action_std
 
 
 infinigen_root = '/home/jinpeng-yu/Desktop/DVG_DATA/infinigen'
@@ -20,7 +17,6 @@ blosm_root = '/home/jinpeng-yu/Desktop/DVG_DATA/blosm'
 
 
 def expand_episode(env, config, model, run_name, drone_type=1, seed=None, random_init_pose=False, re_render=True):
-
     # Reset environment
     env.drone_type = drone_type
     observation, info = env.reset(seed=seed, random_init_pose=random_init_pose)
@@ -42,20 +38,21 @@ def expand_episode(env, config, model, run_name, drone_type=1, seed=None, random
     random_generator = np.random.RandomState(seed)
     noise_embed = random_generator.randn(b, config.hidden_size)
     # batch data should be normalized
-    batch = {'noise_embed': torch.tensor(noise_embed, dtype=torch.float32).cuda(),
-             'quality': torch.ones(b, dtype=torch.long).cuda() * (config.num_quantile_bins - 1),
-             'drone_type': (torch.ones(b, dtype=torch.long).cuda() * drone_type),
-             'intrinsic': K[None].repeat(b, 1, 1).cuda(),
-             'time_steps': torch.arange(0, dtype=torch.long).repeat(b, 1).cuda(),
-             'images': torch.zeros(b, 0, 3, config.image_resolution[0], config.image_resolution[1]).cuda(),
-             'states': torch.zeros(b, 0, model.n_action_to_predict, model.config.state_dim).cuda(),
-             'actions': torch.zeros(b, 0, model.n_action_to_predict, model.config.action_dim).cuda(),
-             'seq_length': torch.zeros(b, dtype=torch.long).cuda(),
-             'past_key_values': None,
-             }
-    seqence_lvl_keys = ['noise_embed', 'quality', 'drone_type', 'intrinsic']
+    batch = {
+        'noise_embed': torch.tensor(noise_embed, dtype=torch.float32).cuda(),
+        'quality': torch.ones(b, dtype=torch.long).cuda() * (config.num_quantile_bins - 1),
+        'drone_type': (torch.ones(b, dtype=torch.long).cuda() * drone_type),
+        'intrinsic': K[None].repeat(b, 1, 1).cuda(),
+        'time_steps': torch.arange(0, dtype=torch.long).repeat(b, 1).cuda(),
+        'images': torch.zeros(b, 0, 3, config.image_resolution[0], config.image_resolution[1]).cuda(),
+        'states': torch.zeros(b, 0, model.n_action_to_predict, model.config.state_dim).cuda(),
+        'actions': torch.zeros(b, 0, model.n_action_to_predict, model.config.action_dim).cuda(),
+        'seq_length': torch.zeros(b, dtype=torch.long).cuda(),
+        'past_key_values': None,
+    }
+    sequence_lvl_keys = ['noise_embed', 'quality', 'drone_type', 'intrinsic']
     batch_pt = {}
-    for key in seqence_lvl_keys:
+    for key in sequence_lvl_keys:
         batch_pt[key] = batch[key]
 
     done = False
@@ -76,25 +73,20 @@ def expand_episode(env, config, model, run_name, drone_type=1, seed=None, random
             [torch.ones([env.state_dim]) * model.config.ignore_value] *
             (model.n_action_to_predict - 1))
 
-        batch['time_steps'] = torch.arange(
-            t + 1, dtype=torch.long).repeat(b, 1).cuda()
-        batch['images'] = torch.cat(
-            [batch['images'], img.cuda()], dim=1)
-        batch['states'] = torch.cat(
-            [batch['states'], states[None, None].cuda()], dim=1)
-        batch['actions'] = torch.cat(
-            [batch['actions'], (torch.ones([b, l, model.n_action_to_predict, model.config.action_dim]).cuda() *
-                                model.config.ignore_value)], dim=1)
+        batch['time_steps'] = torch.arange(t + 1, dtype=torch.long).repeat(b, 1).cuda()
+        batch['images'] = torch.cat([batch['images'], img.cuda()], dim=1)
+        batch['states'] = torch.cat([batch['states'], states[None, None].cuda()], dim=1)
+        batch['actions'] = torch.cat([batch['actions'],
+                                      (torch.ones([b, l, model.n_action_to_predict, model.config.action_dim]).cuda() *
+                                       model.config.ignore_value)], dim=1)
         # length for the sequence, set to 1
-        batch['seq_length'] = torch.ones(
-            b, dtype=torch.long).cuda() * (t + 1)
-        batch['attention_mask'] = torch.ones(
-            b, t - chunk_offset + 1, dtype=torch.long).cuda()
+        batch['seq_length'] = torch.ones(b, dtype=torch.long).cuda() * (t + 1)
+        batch['attention_mask'] = torch.ones(b, t - chunk_offset + 1, dtype=torch.long).cuda()
 
         # use batch_pt for expanding actions
         # only include the last frame
         batch_pt.update({key: value[:, t:] for key, value in batch.items()
-                         if key != 'seq_length' and key != 'attention_mask' and 'past' not in key and key not in seqence_lvl_keys})
+                         if key != 'seq_length' and key != 'attention_mask' and 'past' not in key and key not in sequence_lvl_keys})
         batch_pt['seq_length'] = torch.ones_like(batch['seq_length']) * 1
         batch_pt['time_steps'] = batch_pt['time_steps'] - chunk_offset
         # include all frames for attention mask and past_key_values
@@ -126,11 +118,8 @@ def expand_episode(env, config, model, run_name, drone_type=1, seed=None, random
 
         tvecs = env.tvecs[-env.n_action_to_predict:-1]
         qvecs = env.qvecs[-env.n_action_to_predict:-1]
-        states = np.concatenate(
-            [state[None],
-             (np.concatenate([tvecs, qvecs], axis=1) - state_avg) / state_std])
-        batch['states'][:, -1] = \
-            torch.tensor(states, dtype=torch.float32)[None].cuda()
+        states = np.concatenate([state[None], (np.concatenate([tvecs, qvecs], axis=1) - state_avg) / state_std])
+        batch['states'][:, -1] = torch.tensor(states, dtype=torch.float32)[None].cuda()
 
         # Update total reward and observation
         total_reward += reward
@@ -150,8 +139,7 @@ def expand_episode(env, config, model, run_name, drone_type=1, seed=None, random
             t_ref = _tvecs[chunk_offset * model.n_action_to_predict]
             q_ref = _qvecs[chunk_offset * model.n_action_to_predict]
             if model.motion_option == 'global':
-                actions = (batch['actions'].view(-1, env.action_dim).cpu().numpy() *
-                           action_std + action_avg)
+                actions = (batch['actions'].view(-1, env.action_dim).cpu().numpy() * action_std + action_avg)
                 _vs, _omegas = actions[:, :3], actions[:, 3:]
                 vs, omegas = np.zeros_like(_vs), np.zeros_like(_omegas)
                 for i in range(len(tvecs)):
@@ -163,17 +151,15 @@ def expand_episode(env, config, model, run_name, drone_type=1, seed=None, random
                     b, t, model.n_action_to_predict, model.config.action_dim).cuda()
             else:
                 for i in range(len(tvecs)):
-                    tvecs[i], qvecs[i], _, _ = convert_to_local_frame(
-                        t_ref, q_ref, _tvecs[i], _qvecs[i])
+                    tvecs[i], qvecs[i], _, _ = convert_to_local_frame(t_ref, q_ref, _tvecs[i], _qvecs[i])
             states = np.concatenate([tvecs, qvecs], axis=1)
             batch['states'] = torch.tensor(
                 (states - state_avg) / state_std, dtype=torch.float32).view(
                 b, t, model.n_action_to_predict, model.config.state_dim).cuda()
-            batch['attention_mask'] = \
-                batch['attention_mask'][:, -(chunk_size - chunk_step):]
+            batch['attention_mask'] = batch['attention_mask'][:, -(chunk_size - chunk_step):]
             # use batch_pt for getting the past_key_values
             batch_pt.update({key: value[:, chunk_offset:] for key, value in batch.items()
-                            if key != 'seq_length' and key != 'attention_mask' and 'past' not in key and key not in seqence_lvl_keys})
+                            if key != 'seq_length' and key != 'attention_mask' and 'past' not in key and key not in sequence_lvl_keys})
             batch_pt['seq_length'] = torch.ones_like(batch['seq_length']
                                                      ) * (chunk_size - chunk_step)
             batch_pt['time_steps'] = batch_pt['time_steps'] - chunk_offset
@@ -222,7 +208,7 @@ def blender_simulation(config, model, logdir, num_runs=40, video_duration=10, re
                 scene_fpaths.append(infinigen_fpaths[scene][i])
         pass
     num_repeats = np.ones(len(scene_fpaths), dtype=int) * 3
-    num_repeats[:len(blosm_fpaths)] = 5
+    num_repeats[:len(blosm_fpaths)] = 3
 
     results = []
     for i in tqdm.tqdm(range(min(num_runs, len(scene_fpaths)))):
@@ -230,8 +216,8 @@ def blender_simulation(config, model, logdir, num_runs=40, video_duration=10, re
         if scene_fpath.startswith(blosm_root):
             run_name = scene_fpath.replace(blosm_root, '').split('/')[1]
         elif scene_fpath.startswith(infinigen_root):
-            run_name = '_'.join(scene_fpath.replace(
-                infinigen_root, '').split('/')[1:3])
+            run_name = '_'.join(scene_fpath.replace(infinigen_root, '').split('/')[1:3])
+
         with BlenderCameraEnv(scene_fpath=scene_fpath, fps=config.fps, action_fps=config.action_fps,
                               run_dir=f'{logdir}/videos',
                               resolution=config.image_resolution, video_duration=video_duration,
@@ -239,24 +225,23 @@ def blender_simulation(config, model, logdir, num_runs=40, video_duration=10, re
                               cropped_sensor_width=config.cropped_sensor_width) as env:
             for j in range(num_repeats[i]):
                 seed = i * 100 + j + 1
-                drone_type = (seed % len(config.drone_types)) if len(
-                    config.drone_types) > 1 else config.drone_types[0]
+                drone_type = (seed % len(config.drone_types)) if len(config.drone_types) > 1 else config.drone_types[0]
                 total_reward, crash, seq_len = expand_episode(
                     env, config, model, run_name=run_name, drone_type=drone_type, seed=seed,
                     random_init_pose=(j > 0), re_render=re_render)
-                results.append({'render_fpath': scene_fpath,
-                                'seed': seed,
-                                'total_reward': total_reward,
-                                'crash': crash,
-                                'seq_len': seq_len,
-                                })
+                results.append({
+                    'render_fpath': scene_fpath,
+                    'seed': seed,
+                    'total_reward': total_reward,
+                    'crash': crash,
+                    'seq_len': seq_len
+                })
 
     crash_rate = np.mean([result["crash"] is not None for result in results])
     avg_duration = np.mean([result["seq_len"] for result in results])
     print(f'Average return: {np.mean([result["total_reward"] for result in results])}\n'
           f'Crash rate: {crash_rate}\n'
-          f'Sequence length: {avg_duration}\n'
-          )
+          f'Sequence length: {avg_duration}\n')
 
     # save the crash rate as file
     with open(f'{logdir}/crash_{crash_rate}', 'w') as f:
@@ -271,16 +256,14 @@ def blender_simulation(config, model, logdir, num_runs=40, video_duration=10, re
 if __name__ == '__main__':
     import argparse
     from transformers import set_seed
+
     set_seed(0)
 
-    parser = argparse.ArgumentParser(
-        description='Blender evaluation')
+    parser = argparse.ArgumentParser(description='Blender evaluation')
     # data settings
     parser.add_argument('--logdir', type=str, required=True)
     args = parser.parse_args()
 
-    model = DVGFormerModel.from_pretrained(
-        args.logdir, ignore_mismatched_sizes=True).cuda().bfloat16()
+    model = DVGFormerModel.from_pretrained(args.logdir, ignore_mismatched_sizes=True).cuda().bfloat16()
 
-    blender_simulation(model.config, model, args.logdir,
-                       num_runs=50, video_duration=10)
+    blender_simulation(model.config, model, args.logdir, num_runs=50, video_duration=10)

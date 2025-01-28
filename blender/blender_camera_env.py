@@ -1,4 +1,3 @@
-import random
 import datetime
 import os
 import time
@@ -7,18 +6,15 @@ import bpy
 import bmesh
 from mathutils.bvhtree import BVHTree
 from PIL import Image
-import tqdm
 import gymnasium as gym
-from gymnasium.spaces import Box, Dict, Discrete, MultiBinary, MultiDiscrete
+from gymnasium.spaces import Box, Dict
 import numpy as np
-import torch
-import torchvision.transforms as T
-from transforms3d.quaternions import qinverse, qconjugate, qmult, qnorm, quat2mat, mat2quat, quat2axangle, axangle2quat, nearly_equivalent
-from transforms3d.euler import euler2quat, quat2euler, euler2mat, mat2euler
-from src.blender.render import cycles_settings, configure_blender, render_blender_image
-from src.blender.frames_to_video import frames_to_video, frames_to_gif
-from src.data.state_action_conversion import get_states_actions, reverse_states_actions
-from src.utils.quaternion_operations import convert_to_global_frame, convert_to_local_frame, interpolate_eulers, interpolate_tvecs
+from transforms3d.quaternions import quat2mat, mat2quat
+from transforms3d.euler import euler2mat, mat2euler
+from blender.render import cycles_settings, configure_blender, render_blender_image
+from blender.frames_to_video import frames_to_video, frames_to_gif
+from data.state_action_conversion import get_states_actions, reverse_states_actions
+from utils.quaternion_operations import convert_to_global_frame, convert_to_local_frame, interpolate_eulers, interpolate_tvecs
 
 # What is BVHTree?
 #     BVHTree: In Blender's Python API, BVHTree is a class that represents a
@@ -733,13 +729,6 @@ class BlenderCameraEnv(gym.Env):
 
 
 def main():
-    import re
-    import pandas as pd
-
-    from transforms3d.quaternions import qinverse, qmult, qnorm, quat2mat, mat2quat, quat2axangle, axangle2quat, nearly_equivalent
-    from src.utils.flexible_fs import FlexibleFileSystem
-    from src.utils.quaternion_operations import add_angular_velocity_to_quaternion
-
     motion_option = 'global'
     fps = 3
     original_fps = 15

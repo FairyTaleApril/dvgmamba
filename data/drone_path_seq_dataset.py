@@ -3,24 +3,64 @@ import re
 import time
 import logging
 import json
-from typing import Dict, Optional, Sequence, List
+from typing import Dict, Sequence
 from PIL import Image
 import numpy as np
 from tqdm import tqdm
-from transforms3d.quaternions import qinverse, qconjugate, qmult, qnorm, quat2mat, mat2quat, quat2axangle, axangle2quat, nearly_equivalent
-from transforms3d.euler import euler2quat, quat2euler, euler2mat, mat2euler
 import pandas as pd
 import torch
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import Dataset
 from torchvision.utils import make_grid
 import torchvision.transforms as T
 import torchvision.transforms.functional as F
-from src.data.state_action_conversion import get_states_actions, reverse_states_actions, state_avg, state_std, action_avg, action_std
-from src.preparation.youtube_download import get_video_stat
-from src.utils.padding import padding, concated_seq_to_instances
-from src.utils.quaternion_operations import convert_to_local_frame, horizontal_flip, add_angular_velocity_to_quaternion, quaternions_to_angular_velocity
-from src.utils.flexible_fs import FlexibleFileSystem
-from src.utils.colmap_official_read_write_model import read_cameras_binary, read_images_binary, read_points3D_binary
+from data.state_action_conversion import get_states_actions, reverse_states_actions, state_avg, state_std, action_avg, action_std
+from utils.padding import padding
+from utils.quaternion_operations import convert_to_local_frame, horizontal_flip, add_angular_velocity_to_quaternion, quaternions_to_angular_velocity
+from utils.flexible_fs import FlexibleFileSystem
+from utils.colmap_official_read_write_model import read_cameras_binary
+
+fpv_keywords = ['fpv', 'dji avata']
+drone_keywords = ['drone', 'dji', 'fpv']
+skip_words = ['unbox', 'piyush', 'drone catches', 'glue gun', 'humne', 'gets attacked', 'drone attack', 'sonic drone',
+              'zz kid', 'merekam', 'scary video', 'drone show', 'Arcade Craniacs', '.exe', 'Stromedy', 'zombie',
+              'restore', 'Jester', 'drone strike', 'Mark Rober', 'Plasmonix', 'Sourav Joshi Vlogs', 'lego', 'MR. INDIAN HACKER',
+              'horror', 'ketakutan', 'Mikael TubeHD', 'TRT \u00c7ocuk', 'kurulacak', 'penampakan', 'The RawKnee Games',
+              'NIkku Vlogz', 'girgaya', 'chinu', 'military', 'surveillance', 'pakai', 'Yudist Ardhana', 'Technical Indian with fun',
+              'menangkap', 'nampak', 'ZZ Kids TV', 'soldier', 'Bharat Tak', 'Sannu Kumar', 'lahari', 'Mikael Family', 'Smart rohit gadget',
+              'attacked by', 'Josh Reid', 'terekam', 'kentang', 'sumur maut', 'Frost Diamond', 'Fatih Can Aytan', 'apex legends',
+              'Golden TV - Funny Hindi Comedy Videos', 'hindi comedy', 'The Squeezed Lemon', 'no one would have believed it',
+              'Wonders of the World', 'carwow', 'no one would believe it', 'Max TV', 'cartoon', 'for kids', 'pendaki', 'andrea ramadhan',
+              'tornado', 'corpse', 'aerial tale', 'muthumalai', 'Videogyan Kids Shows - Toddler Learning Videos', 'WasimOP', 'nangis',
+              'Zefanya Oyanio', 'deadly fire', 'oblivion', 'darussalam', 'Kang Adink', 'shoot down', 'collapse', 'hamas', 'aftermath',
+              'NewsFirst Kannada', 'drone fails', 'FailArmy', 'YaQurban', 'pashto', 'camping', 'Harmen Hoek', 'slaughter', 'weapon',
+              'JerryRigEverything', 'toys', 'Majedar Review', ]
+
+
+def get_video_stat(metadata):
+    def contain(xs, keywords):
+        return any(keyword in x for keyword in keywords for x in xs)
+
+    like_count = metadata.get('like_count', None)
+    comment_count = metadata.get('comment_count', None)
+    is_fpv = contain([metadata['title'].lower(), metadata['description'].lower()], fpv_keywords)
+    is_drone = contain([metadata['title'].lower(), metadata['description'].lower()], drone_keywords)
+    has_skip_words = contain([metadata['title'].lower(), metadata['description'].lower(),metadata.get('channel', '')],
+                             skip_words)
+    width, height = map(lambda x: int(x), metadata['resolution'].split('x'))
+    is_landscape = width / height > 1
+    video_stat = {
+        'title': metadata['title'],
+        'view_count': metadata['view_count'],
+        'like_count': like_count if like_count is not None else 0,
+        'comment_count': comment_count if comment_count is not None else 0,
+        'duration': metadata['duration'],
+        'is_fpv': is_fpv,
+        'has_skip_words': has_skip_words,
+        'is_drone': is_drone,
+        'is_landscape': is_landscape,
+        # 'has_skip_language': has_skip_language(metadata['title'].lower()),
+    }
+    return video_stat
 
 
 def color_jitter(img, brightness=0.0, contrast=0.0, saturation=0.0, hue=0.0, fn_idx=(0, 1, 2, 3)):
@@ -123,8 +163,7 @@ class DronePathSequenceDataset(Dataset):
         self.num_cuda_devices = torch.cuda.device_count()
 
         # Update: change from tar to HDF5 for the SWMR mode for multi workers in dataloader
-        self.h5_fs = FlexibleFileSystem(
-            f'{self.root}/{self.hdf5_fname if self.hdf5_fname else ""}')
+        self.h5_fs = FlexibleFileSystem(f'{self.root}/{self.hdf5_fname if self.hdf5_fname else ""}')
         self.video_stats = {}
         self.all_scenes = []
         self.data_list = []
@@ -137,8 +176,7 @@ class DronePathSequenceDataset(Dataset):
                     metadata = json.load(f)
                 video_stat = get_video_stat(metadata)
                 video_stat['num_clips'] = 0
-                video_stat['quality'] = (video_stat['view_count'] /
-                                         video_stat['duration'])
+                video_stat['quality'] = (video_stat['view_count'] / video_stat['duration'])
 
                 if not video_stat['is_drone'] or video_stat['has_skip_words']:
                     continue
@@ -154,15 +192,12 @@ class DronePathSequenceDataset(Dataset):
             for result_fname in sorted(self.h5_fs.listdir(f'{self.root}/{video_id}')):
                 if not ('-score' in result_fname and result_fname.endswith('.csv')):
                     continue
-                scene = os.path.basename(result_fname).split(
-                    '-')[0].replace('scene', '')
+                scene = os.path.basename(result_fname).split('-')[0].replace('scene', '')
                 video_scene = f'{video_id}/scene{scene}'
                 if video_scene not in self.all_scenes:
                     self.all_scenes.append(video_scene)
-                recons_index = int(os.path.basename(result_fname).split(
-                    '-')[1].replace('recons', ''))
-                score = int(re.search(r'-score(\d+)',
-                                      result_fname).group(1))
+                recons_index = int(os.path.basename(result_fname).split('-')[1].replace('recons', ''))
+                score = int(re.search(r'-score(\d+)', result_fname).group(1))
                 valid = '_invalid' not in result_fname
                 if not score or not valid:
                     continue
@@ -177,30 +212,29 @@ class DronePathSequenceDataset(Dataset):
 
                 total_length += len(recons_array) / self.original_fps
                 if self.max_model_frames == self.max_data_frames:
-                    self.data_list.append(
-                        {'result_fpath': result_fpath,
-                         'start_idx': 0,
-                         'end_idx': len(recons_array)})
+                    self.data_list.append({
+                        'result_fpath': result_fpath,
+                        'start_idx': 0,
+                        'end_idx': len(recons_array)
+                    })
                 else:
                     chunk_step = self.max_model_frames // 2 // self.fps_downsample * self.fps_downsample
                     for start_idx in range(0, len(recons_array) //
                                            self.fps_downsample * self.fps_downsample - chunk_step, chunk_step):
-                        self.data_list.append(
-                            {'result_fpath': result_fpath,
-                             'start_idx': start_idx,
-                             'end_idx': min(start_idx + self.max_model_frames, len(recons_array))})
-            self.video_stats[video_id]['num_clips'] = \
-                len(self.data_list) - current_num_clips
+                        self.data_list.append({
+                            'result_fpath': result_fpath,
+                            'start_idx': start_idx,
+                            'end_idx': min(start_idx + self.max_model_frames, len(recons_array))
+                        })
+            self.video_stats[video_id]['num_clips'] = len(self.data_list) - current_num_clips
 
         # log the overall stats
-        stat_keys = ['view_count', 'like_count', 'comment_count', 'duration',
-                     'is_fpv', 'num_clips', 'quality']
+        stat_keys = ['view_count', 'like_count', 'comment_count', 'duration', 'is_fpv', 'num_clips', 'quality']
         video_stat_array = {}
         for key in stat_keys:
             video_stat_array[key] = np.array([self.video_stats[video_id][key]
                                               for video_id in self.video_stats])
-        print(f'Dataset: {len(self.data_list)} sequences, '
-              f'{total_length / 3600:.1f} hours')
+        print(f'Dataset: {len(self.data_list)} sequences, {total_length / 3600:.1f} hours')
         is_fpv = video_stat_array["is_fpv"] == 1
         print(f'total videos: {len(self.video_stats)} \t'
               f'fpv: {np.sum(is_fpv)} \tnon-fpv: {np.sum(~is_fpv)}')
@@ -212,8 +246,7 @@ class DronePathSequenceDataset(Dataset):
         for video_id in self.video_stats:
             clip_quality.extend([self.video_stats[video_id]['quality']] *
                                 self.video_stats[video_id]['num_clips'])
-        quantile_bins = np.quantile(clip_quality,
-                                    np.linspace(0, 1, num_quantile_bins))
+        quantile_bins = np.quantile(clip_quality, np.linspace(0, 1, num_quantile_bins))
         for video_id in self.video_stats:
             self.video_stats[video_id]['quality_quantile'] = int(np.digitize(
                 self.video_stats[video_id]['quality'], quantile_bins, right=True))
@@ -285,8 +318,7 @@ class DronePathSequenceDataset(Dataset):
             hue = 0.0
             jitter_fn_idx = np.arange(4)
 
-        noise_embed = get_noise_vector(noise_idx + index * 2,
-                                       self.noise_dim)
+        noise_embed = get_noise_vector(noise_idx + index * 2, self.noise_dim)
 
         # camera poses
         # note: the original tvecs and qvecs in read_images_binary() gives camera extrinsic matrix [R=quat2mat(qvec), t=tvec],
@@ -305,8 +337,7 @@ class DronePathSequenceDataset(Dataset):
         raw_omegas = recons_array[:, 24:27].astype(float)
         # add the final speed and angular velocity to extend the sequence
         final_tvec = raw_tvecs[-1] + raw_vs[-1]
-        final_qvec = add_angular_velocity_to_quaternion(
-            raw_qvecs[-1], raw_omegas[-1], 1)
+        final_qvec = add_angular_velocity_to_quaternion(raw_qvecs[-1], raw_omegas[-1], 1)
         raw_tvecs = np.concatenate([raw_tvecs, final_tvec[None]], axis=0)
         raw_qvecs = np.concatenate([raw_qvecs, final_qvec[None]], axis=0)
 
@@ -332,16 +363,13 @@ class DronePathSequenceDataset(Dataset):
             aug_tvecs = np.zeros_like(tvecs)
             aug_qvecs = np.zeros_like(qvecs)
             for i in range(len(tvecs)):
-                aug_tvecs[i], aug_qvecs[i], _, _ = horizontal_flip(
-                    tvecs[i], qvecs[i])
+                aug_tvecs[i], aug_qvecs[i], _, _ = horizontal_flip(tvecs[i], qvecs[i])
         else:
             aug_tvecs, aug_qvecs = tvecs, qvecs
 
         # states & actions are self.n_action_to_predict times the length
-        time_range = (time_steps[:, None] * self.fps_downsample +
-                      np.arange(self.n_action_to_predict))
-        _states, _actions = get_states_actions(
-            aug_tvecs, aug_qvecs,
+        time_range = (time_steps[:, None] * self.fps_downsample + np.arange(self.n_action_to_predict))
+        _states, _actions = get_states_actions(aug_tvecs, aug_qvecs,
             motion_option=self.motion_option, action_downsample=self.action_downsample)
         # include the last state
         next_t, next_q, _, _ = reverse_states_actions(
@@ -351,13 +379,10 @@ class DronePathSequenceDataset(Dataset):
         next_states = _states[time_range // self.action_downsample + 1]
         states = _states[time_range // self.action_downsample]
         # if sparse action, make sure the action is still of the same norm
-        actions = (_actions[time_range // self.action_downsample] /
-                   self.action_downsample)
+        actions = (_actions[time_range // self.action_downsample] / self.action_downsample)
         # compute the future waypoints
-        n_step_vs = np.ones([seq_length + self.n_future_steps - 1, 3]
-                            ) * self.ignore_value
-        n_step_omegas = np.ones([seq_length + self.n_future_steps - 1, 3]
-                                ) * self.ignore_value
+        n_step_vs = np.ones([seq_length + self.n_future_steps - 1, 3]) * self.ignore_value
+        n_step_omegas = np.ones([seq_length + self.n_future_steps - 1, 3]) * self.ignore_value
         for i in range(seq_length + self.n_future_steps - 1):
             if (time_steps[0] + i + 1) * self.fps_downsample >= len(aug_tvecs):
                 break
@@ -470,8 +495,7 @@ class DronePathSequenceDataset(Dataset):
         actions = torch.tensor(actions, dtype=torch.float32)
         stop_labels = torch.zeros(seq_length)
         future_mask = (n_step_actions != self.ignore_value).all(axis=-1)
-        n_step_actions[future_mask] = (
-            n_step_actions[future_mask] - action_avg) / action_std
+        n_step_actions[future_mask] = (n_step_actions[future_mask] - action_avg) / action_std
         n_step_actions = torch.tensor(n_step_actions, dtype=torch.float32)
 
         scene_part = int(scene.split('_')[1])
@@ -553,11 +577,11 @@ def main():
 
     set_seed(0)
     dataset = DronePathSequenceDataset('/media/jinpeng-yu/Data/dvg_data',
-                                       'dataset_medium_fpv.h5')
+                                       'dataset_full.h5')
     print(len(dataset))
-    # dataset.__getitem__(1, visualize=True)
 
-    return
+    for i in range(len(dataset)):
+        data = dataset.__getitem__(i, visualize=True)
 
 
 if __name__ == '__main__':

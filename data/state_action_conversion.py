@@ -1,15 +1,10 @@
-import os
 import re
-from dataclasses import dataclass, field
-from typing import Dict, Optional, Sequence, List
 import numpy as np
-from transforms3d.quaternions import qinverse, qconjugate, qmult, qnorm, quat2mat, mat2quat, quat2axangle, axangle2quat, nearly_equivalent
-from transforms3d.euler import euler2quat, quat2euler, euler2mat, mat2euler
 import pandas as pd
 import torch
-from src.utils.quaternion_operations import convert_to_local_frame, convert_to_global_frame, add_angular_velocity_to_quaternion, quaternions_to_angular_velocity
-from src.utils.flexible_fs import FlexibleFileSystem
-from src.utils.pytorch3d_rotation_conversion import euler_angles_to_matrix, matrix_to_euler_angles, quaternion_to_matrix, matrix_to_quaternion
+from utils.quaternion_operations import convert_to_local_frame, convert_to_global_frame, add_angular_velocity_to_quaternion, quaternions_to_angular_velocity
+from utils.flexible_fs import FlexibleFileSystem
+from utils.pytorch3d_rotation_conversion import euler_angles_to_matrix, quaternion_to_matrix, matrix_to_quaternion
 
 # non fpv
 # states: mean=tensor([ 1.2421e+00,  4.5750e-02,  1.1822e+01,  9.9537e-01,  1.4548e-02,
@@ -211,8 +206,7 @@ def reverse_states_actions_tensor(states, actions, motion_option='global'):
 
 def main():
     import time
-    from transforms3d.quaternions import qinverse, qmult, qnorm, quat2mat, mat2quat, quat2axangle, axangle2quat, nearly_equivalent
-    from src.utils.quaternion_operations import add_angular_velocity_to_quaternion, quaternions_to_angular_velocity
+    from utils.quaternion_operations import add_angular_velocity_to_quaternion
 
     root, filter_results_path = 'youtube_drone_videos', 'dataset_mini.h5'
     fps_downsample = 5

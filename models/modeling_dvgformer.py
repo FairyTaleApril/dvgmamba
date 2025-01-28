@@ -1,25 +1,25 @@
-from typing import Optional, Tuple, Union, Dict, Sequence, List
+from enum import Enum
+from typing import Optional, Tuple, Union, Any
 from functools import partial
 from dataclasses import dataclass
 import matplotlib.pyplot as plt
 from dash.exceptions import InvalidConfig
-from einops import pack, unpack, repeat, reduce, rearrange, einsum
+from einops import repeat, rearrange
 import numpy as np
-from transforms3d.quaternions import qinverse, qconjugate, qmult, qnorm, quat2mat, mat2quat, quat2axangle, axangle2quat, nearly_equivalent
-from transforms3d.euler import euler2quat, quat2euler, euler2mat, mat2euler
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
-import timm
-import transformers
-from transformers import PreTrainedModel, GPT2Model, AutoModel, Dinov2Backbone, DepthAnythingForDepthEstimation, \
-    set_seed, MambaModel, MambaConfig
+from transformers import PreTrainedModel, GPT2Model, DepthAnythingForDepthEstimation, MambaModel, MambaCache, MambaForCausalLM
 from transformers.utils import ModelOutput
-from src.models.config_dvgformer import DVGFormerConfig
-from src.data.state_action_conversion import state_avg, state_std, action_avg, action_std, reverse_states_actions_tensor
-from src.utils.pytorch3d_rotation_conversion import quaternion_to_matrix, matrix_to_quaternion, euler_angles_to_matrix, matrix_to_euler_angles
-from src.utils.padding import concated_seq_to_instances, padded_seq_to_instances, padding
+from models.config_dvgformer import DVGFormerConfig
+from data.state_action_conversion import state_avg, state_std, action_avg, action_std, reverse_states_actions_tensor
+from utils.padding import concated_seq_to_instances, padded_seq_to_instances, padding
+
+
+class DVGFormerForwardMode(Enum):
+    Training = 0
+    Generation = 1
 
 
 class QualityTokenizer(nn.Module):
@@ -42,8 +42,7 @@ class QualityTokenizer(nn.Module):
                 nn.Linear(config.hidden_size, config.hidden_size)
             )
         else:
-            self.embed_quality = nn.Embedding(
-                self.num_bins, config.hidden_size)
+            self.embed_quality = nn.Embedding(self.num_bins, config.hidden_size)
 
     def forward(self, x):
         '''
@@ -54,8 +53,7 @@ class QualityTokenizer(nn.Module):
         '''
         if self.config.use_quality_mlps:
             dtype = self.embed_quality[0].weight.dtype
-            quality = self.embed_quality(
-                x.unsqueeze(-1).to(dtype) / self.num_bins)
+            quality = self.embed_quality(x.unsqueeze(-1).to(dtype) / self.num_bins)
         else:
             quality = self.embed_quality(x)
         return quality
@@ -148,17 +146,16 @@ class ImageTokenizer(nn.Module):
             feature = feature + depth_feature
         else:
             disparity = None
-        feature = F.adaptive_avg_pool2d(
-            feature, self.image_featmap_shape)
+        feature = F.adaptive_avg_pool2d(feature, self.image_featmap_shape)
         image_tokens = rearrange(feature, 'b c h w -> b (h w) c')
         return image_tokens
 
 
 @dataclass
 class DVGFormerOutput(ModelOutput):
-    '''
+    """
     A class to store the output of the DVGFormerModel.
-    '''
+    """
     loss: Optional[torch.FloatTensor] = None
     drone_type_preds: Optional[torch.FloatTensor] = None
     action_preds: Optional[torch.FloatTensor] = None
@@ -167,6 +164,7 @@ class DVGFormerOutput(ModelOutput):
     past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None
     hidden_states: Optional[Tuple[torch.FloatTensor, ...]] = None
     attentions: Optional[Tuple[torch.FloatTensor, ...]] = None
+    cache_params: Optional[Any] = None
 
 
 class DVGFormerModel(PreTrainedModel):
@@ -191,11 +189,9 @@ class DVGFormerModel(PreTrainedModel):
         self.n_future_steps = config.n_future_frames // config.fps_downsample
 
         # begin of action token
-        self.boa_token_embed = nn.Parameter(
-            torch.randn(config.hidden_size))
+        self.boa_token_embed = nn.Parameter(torch.randn(config.hidden_size))
         # padding token
-        self.pad_token_embed = nn.Parameter(
-            torch.randn(config.hidden_size))
+        self.pad_token_embed = nn.Parameter(torch.randn(config.hidden_size))
 
         # number of tokens for describing the entire sequence
         self.n_token_noise = config.n_token_noise
@@ -217,8 +213,7 @@ class DVGFormerModel(PreTrainedModel):
 
         # token_types: 0 for predicting nothing, 1 for next state pred, 2 for action pred, 3 for both state and action pred, 4 for stop pred
         # within-frame positional embedding
-        self.in_frame_pe = nn.Embedding(
-            config.n_token_frame, config.hidden_size // 2)
+        self.in_frame_pe = nn.Embedding(config.n_token_frame, config.hidden_size // 2)
         # cross-frame positional embeddings
         self.cross_frame_pe = nn.Embedding(
             config.max_model_frames // config.fps_downsample,
@@ -229,8 +224,7 @@ class DVGFormerModel(PreTrainedModel):
 
         # tokens for the entire sequence
         self.embed_quality = QualityTokenizer(config)
-        self.embed_drone_type = nn.Embedding(
-            2, config.hidden_size)  # 0: non-fpv, 1: fpv
+        self.embed_drone_type = nn.Embedding(2, config.hidden_size)  # 0: non-fpv, 1: fpv
         # tokens for each frame
         self.embed_img = ImageTokenizer(config)
         self.embed_state = nn.Sequential(
@@ -240,8 +234,7 @@ class DVGFormerModel(PreTrainedModel):
             # nn.LayerNorm(config.hidden_size)
         )
         self.embed_action = nn.Sequential(
-            nn.Linear(config.action_dim * config.per_token_preds,
-                      config.hidden_size), nn.GELU(),
+            nn.Linear(config.action_dim * config.per_token_preds, config.hidden_size), nn.GELU(),
             nn.Linear(config.hidden_size, config.hidden_size), nn.GELU(),
             nn.Linear(config.hidden_size, config.hidden_size),
             # nn.LayerNorm(config.hidden_size)
@@ -255,7 +248,6 @@ class DVGFormerModel(PreTrainedModel):
             # turn off requires_grad for the original positional embeddings
             self.transformer.wpe.requires_grad_(False)
         elif self.config.attention_model == 'Mamba':
-            # self.transformer = Mamba()
             self.transformer = MambaModel(config.attention_model_config)
         else:
             raise InvalidConfig
@@ -270,18 +262,13 @@ class DVGFormerModel(PreTrainedModel):
             nn.Linear(config.hidden_size, 1),
         )
         # predictions for each frame
-        self.predict_action = nn.Linear(
-            config.hidden_size, config.action_dim * config.per_token_preds)
-        self.predict_stop = nn.Linear(
-            config.hidden_size, 1)  # binary classification for end-of-seq
+        self.predict_action = nn.Linear(config.hidden_size, config.action_dim * config.per_token_preds)
+        self.predict_stop = nn.Linear(config.hidden_size, 1)  # binary classification for end-of-seq
         # auxiliary predictions
-        self.predict_next_state = nn.Linear(
-            config.hidden_size, config.state_dim * config.per_token_preds)
-        self.predict_future_action = nn.Linear(
-            config.hidden_size, config.action_dim * self.n_future_steps)
+        self.predict_next_state = nn.Linear(config.hidden_size, config.state_dim * config.per_token_preds)
+        self.predict_future_action = nn.Linear(config.hidden_size, config.action_dim * self.n_future_steps)
 
-        self.stop_loss = partial(torchvision.ops.sigmoid_focal_loss,
-                                 alpha=config.focal_alpha)
+        self.stop_loss = partial(torchvision.ops.sigmoid_focal_loss, alpha=config.focal_alpha)
         self.drone_type_loss = nn.BCEWithLogitsLoss(reduction='none')
 
         # Initialize weights and apply final processing
@@ -478,8 +465,10 @@ class DVGFormerModel(PreTrainedModel):
         use_cache: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
+        cache_params = None,
+        mode: Optional[DVGFormerForwardMode] = DVGFormerForwardMode.Training
     ) -> Union[Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor], DVGFormerOutput]:
-        '''
+        """
         Forward pass of the model given inputs.
         There are two options for the forward pass:
         1. Training: the model predicts the next token based on inputs of
@@ -518,7 +507,7 @@ class DVGFormerModel(PreTrainedModel):
             output_attentions (bool): whether to output attentions
         Returns:
             DVGFormerOutput: the output of the model
-        '''
+        """
         # bool indicators
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
@@ -571,7 +560,7 @@ class DVGFormerModel(PreTrainedModel):
             drone_type_preds = None
 
         inputs_embeds = self.embed_ln(inputs_embeds)
-        # Note: we have kept the positional embeddings to 0 in the originial GPT2 model
+        # Note: we have kept the positional embeddings to 0 in the original GPT2 model
         # token-level & frame-level positional embedding
         prepend_length = (within_frame_pos == self.config.ignore_value).sum(dim=1)[0].item()
         inputs_embeds[:, :prepend_length] += self.prepend_pe[:prepend_length]
@@ -581,10 +570,11 @@ class DVGFormerModel(PreTrainedModel):
 
         # sanity check
         inputs_embeds = inputs_embeds.to(self.dtype)
-        past_key_values = None if past_key_values is None else tuple(
-            tuple(pkv.to(self.dtype) for pkv in pkvs) for pkvs in past_key_values)
         # we feed in the input embeddings (not word indices as in NLP) to the model
         if self.config.attention_model == 'GPT2':
+            past_key_values = None if past_key_values is None else tuple(
+                tuple(pkv.to(self.dtype) for pkv in pkvs) for pkvs in past_key_values)
+
             transformer_outputs = self.transformer(
                 inputs_embeds=inputs_embeds,
                 past_key_values=past_key_values,
@@ -592,13 +582,18 @@ class DVGFormerModel(PreTrainedModel):
                 position_ids=torch.zeros_like(position_ids),
                 use_cache=True,
                 output_attentions=output_attentions,
-                output_hidden_states=output_hidden_states,
+                output_hidden_states=output_hidden_states
             )
             hidden_states = transformer_outputs[0]
         elif self.config.attention_model == 'Mamba':
-            # hidden_states = self.transformer(inputs_embeds)
+            attention_mask = attention_mask if (attention_mask is not None and 0 in attention_mask) else None
+
             transformer_outputs = self.transformer(
-                inputs_embeds=inputs_embeds
+                inputs_embeds=inputs_embeds,
+                attention_mask=attention_mask,
+                use_cache=True,
+                cache_params=cache_params,
+                output_hidden_states=output_hidden_states
             )
             hidden_states = transformer_outputs[0]
         else:
@@ -612,18 +607,15 @@ class DVGFormerModel(PreTrainedModel):
         # predict next state
         pred_next_state_pos = (token_types == 1) | (token_types == 3)
         if pred_next_state_pos.any():
-            next_state_preds = self.predict_next_state(
-                hidden_states[pred_next_state_pos])
-            next_state_preds = next_state_preds.view(
-                [b, l, -1, self.config.state_dim])
+            next_state_preds = self.predict_next_state(hidden_states[pred_next_state_pos])
+            next_state_preds = next_state_preds.view([b, l, -1, self.config.state_dim])
         else:
             next_state_preds = None
         # predict next action
         pred_action_pos = (token_types == 2) | (token_types == 3)
         if pred_action_pos.any():
             action_preds = self.predict_action(hidden_states[pred_action_pos])
-            action_preds = action_preds.view(
-                [b, l, -1, self.config.action_dim])
+            action_preds = action_preds.view([b, l, -1, self.config.action_dim])
         else:
             action_preds = None
         # predict begin-of-frame / end-of-sequence
@@ -634,8 +626,7 @@ class DVGFormerModel(PreTrainedModel):
         if pred_stop_pos.any():
             stop_preds = self.predict_stop(hidden_states[pred_stop_pos])
             stop_preds = rearrange(stop_preds, '(b l) 1 -> b l', b=b)
-            future_action_preds = self.predict_future_action(
-                hidden_states[pred_stop_pos])
+            future_action_preds = self.predict_future_action(hidden_states[pred_stop_pos])
             future_action_preds = rearrange(future_action_preds, '(b l) (n c) -> b l n c',
                                             b=b, n=self.n_future_steps, c=self.config.action_dim)
         else:
@@ -668,8 +659,7 @@ class DVGFormerModel(PreTrainedModel):
                         loss_action * self.config.loss_coef_action +
                         loss_stop * self.config.loss_coef_stop +
                         loss_future_action * self.config.loss_coef_future) * sequence_mask
-            loss = (loss_drone_type * self.config.loss_coef_drone_type +
-                    seq_loss.mean())
+            loss = loss_drone_type * self.config.loss_coef_drone_type + seq_loss.mean()
 
         if self.config.attention_model == 'GPT2':
             return DVGFormerOutput(
@@ -678,9 +668,9 @@ class DVGFormerModel(PreTrainedModel):
                 action_preds=action_preds,
                 stop_preds=stop_preds,
                 future_action_preds=future_action_preds,
-                # past_key_values=transformer_outputs.past_key_values,
+                past_key_values=transformer_outputs.past_key_values,
                 hidden_states=transformer_outputs.hidden_states,
-                # attentions=transformer_outputs.attentions,
+                attentions=transformer_outputs.attentions
             )
         elif self.config.attention_model == 'Mamba':
             return DVGFormerOutput(
@@ -690,6 +680,7 @@ class DVGFormerModel(PreTrainedModel):
                 stop_preds=stop_preds,
                 future_action_preds=future_action_preds,
                 hidden_states=hidden_states,
+                cache_params=transformer_outputs.cache_params if mode == DVGFormerForwardMode.Generation else None
             )
         else:
             raise InvalidConfig
@@ -750,12 +741,12 @@ class DVGFormerModel(PreTrainedModel):
         past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None,
         attention_mask: Optional[torch.FloatTensor] = None,
     ) -> DVGFormerOutput:
-        '''
+        """
         Expand the actions for one (current) pair of image & state (for generation).
         There are three modes for expanding the action based on config.test_gt_forcing:
         1. 'allframe': use GT actions in each frame (15 fps) as conditions for expanding the actions. must be used when actions are provided.
         2. 'keyframe': use GT state for key frames (3 fps) and PREDICTED actions (15 fps) as conditions for expanding the actions
-        3. 'none': same as above, but also excute the actions to get the future image & state
+        3. 'none': same as above, but also execute the actions to get the future image & state
                    (require support for interactive environment)
 
         Args:
@@ -771,7 +762,7 @@ class DVGFormerModel(PreTrainedModel):
             attention_mask (torch.FloatTensor): [batch_size, padded_length]
         Returns:
             DVGFormerOutput: the output of the model
-        '''
+        """
         device = images.device
 
         # l: padded_length for images & states
@@ -798,8 +789,8 @@ class DVGFormerModel(PreTrainedModel):
             noise_embed = None
 
         inputs_embeds, attention_mask, position_ids, within_frame_pos, token_types = self._tokenize(
-            time_steps, images, states, actions, seq_length, attention_mask.to(
-                self.dtype), noise_embed, quality, drone_type, intrinsic, past_key_values)
+            time_steps, images, states, actions, seq_length, attention_mask.to(self.dtype),
+            noise_embed, quality, drone_type, intrinsic, past_key_values)
         # remove the last several terms for prediction
         if self.n_token_predict == 0:
             end_idx = inputs_embeds.shape[1]
@@ -811,14 +802,15 @@ class DVGFormerModel(PreTrainedModel):
         # from transformers.generation.utils import GenerationMixin
         # input:    quality, drone_type, image * n_token_image, (state, action) * n_action_to_predict
         # predict:  (state, action) * n_action_to_predict, stop
-        model_inputs = {'inputs_embeds': inputs_embeds,
-                        'attention_mask': attention_mask[:, :mask_end_idx],
-                        'position_ids': position_ids[:, :end_idx],
-                        'within_frame_pos': within_frame_pos[:, :end_idx],
-                        'token_types': token_types[:, :end_idx],
-                        'past_key_values': past_key_values,
-                        'use_cache': True,
-                        }
+        model_inputs = {
+            'inputs_embeds': inputs_embeds,
+            'attention_mask': attention_mask[:, :mask_end_idx],
+            'position_ids': position_ids[:, :end_idx],
+            'within_frame_pos': within_frame_pos[:, :end_idx],
+            'token_types': token_types[:, :end_idx],
+            'past_key_values': past_key_values,
+            'use_cache': True,
+        }
 
         # predict the next self.n_action_to_predict actions & next_states
         # t=0,1,2,...
@@ -861,8 +853,7 @@ class DVGFormerModel(PreTrainedModel):
                     if gt_forcing:
                         executed_states[:, :, i + 1] = states[:, :, i + 1]
                     else:
-                        executed_states[:, :, i + 1] = \
-                            next_states[:, :, i]
+                        executed_states[:, :, i + 1] = next_states[:, :, i]
             # stop
             if outputs.stop_preds is not None:
                 stop_preds = outputs.stop_preds
@@ -871,8 +862,7 @@ class DVGFormerModel(PreTrainedModel):
                 future_action_preds = outputs.future_action_preds
             # next token
             if self.n_token_action == 1 and i < pred_steps:
-                next_embeds = self.embed_action(
-                    executed_actions.to(self.dtype)[:, -1, [i]])
+                next_embeds = self.embed_action(executed_actions.to(self.dtype)[:, -1, [i]])
             if i == self.n_token_predict:
                 break
 
@@ -901,169 +891,6 @@ class DVGFormerModel(PreTrainedModel):
 
 
 def main():
-    import tqdm
-    from torch.utils.data import DataLoader
-    import torch.optim as optim
-    from torchvision.utils import make_grid
-    import torchvision.transforms as T
-    from transformers import set_seed
-    from src.models.config_dvgformer import DVGFormerConfig
-    from src.data.drone_path_seq_dataset import DronePathSequenceDataset, collate_fn_video_drone_path_dataset
-
-    # torch.inverse multi-threading RuntimeError: lazy wrapper should be called at most once
-    # https://github.com/pytorch/pytorch/issues/90613#issuecomment-1817307008
-    torch.inverse(torch.ones((1, 1), device="cuda:0"))
-
-    set_seed(1)
-    torch.backends.cuda.matmul.allow_tf32 = True
-
-    config = DVGFormerConfig(
-        fps=3,
-        # prediction_option='one-shot',
-        # action_option='sparse',
-        # max_model_frames=30,
-        motion_option='local',
-        # image_featmap_shape=(4, 7),
-        n_token_noise=1,
-        n_token_quality=0,
-        n_token_state=1,
-        n_token_action=1,
-        # vision_backbone='dinov2_vits14_reg',
-        # attn_implementation='flash_attention_2'
-    )
-    # return
-
-    dataset = DronePathSequenceDataset(
-        'youtube_drone_videos',
-        'dataset_mini.h5',
-        drone_types=[1],
-        fps=config.fps,
-        action_fps=config.action_fps,
-        max_model_frames=config.max_model_frames,
-        motion_option=config.motion_option,
-        resolution=config.image_resolution,
-        num_quantile_bins=config.num_quantile_bins,
-    )
-    dataloader = DataLoader(dataset, batch_size=2, shuffle=False,
-                            collate_fn=collate_fn_video_drone_path_dataset,
-                            num_workers=0)
-
-    device = 'cuda'
-    model = DVGFormerModel(config).to(device)
-    # model.to(torch.bfloat16)
-    # model = DVGFormerModel.from_pretrained(
-    #     'logs/DEBUG_fpv-3fps-150frames-l12h6-n1img45boa1s1aID1-motionL-depth2d-lossa1-F-resonnt-humanist').cuda() #.bfloat16()
-    model.eval()
-
-    def count_parameters(model):
-        return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-    print(
-        f'The model has {count_parameters(model.transformer):,} trainable parameters')
-
-    # batch = next(iter(dataloader))
-    total_loss = 0
-    for i, batch in enumerate(tqdm.tqdm(dataloader)):
-        batch = {key: value.to(device)
-                 for key, value in batch.items()
-                 #  if key != 'quality'
-                 }
-        # depth_loss = depth_model(**batch)
-
-        out = model(**batch, output_attentions=True)
-        if config._attn_implementation != 'flash_attention_2':
-            attns = [attn.mean(dim=1)[1].float().detach().cpu().numpy()
-                     for attn in out.attentions]
-            # plot the attention map for the first and the last layer
-            plt.figure(figsize=(20, 10))  # Increase the plot size
-            plt.subplot(1, 2, 1)
-            plt.imshow(attns[0], vmin=0, vmax=0.1)
-            plt.subplot(1, 2, 2)
-            plt.imshow(attns[-1], vmin=0, vmax=0.1)
-            # Save the figure at a higher quality
-            plt.savefig('attn.png', dpi=300)
-        total_loss += out.loss
-        if i == 0:
-            break
-    print(total_loss / (i + 1))
-    # return
-    partition_length = 2
-    if model.max_model_frames == model.max_data_frames:
-        batch_pt0 = {key: value[:, :partition_length] if len(value.shape) > 1 else value for key, value in batch.items()
-                     if key != 'seq_length' and key != 'intrinsic' and key != 'attention_mask' and 'label' not in key
-                     and 'quality' not in key and 'drone_type' not in key and 'noise' not in key}
-        batch_pt0['attention_mask'] = batch['attention_mask'][:,
-                                                              :partition_length]
-        batch_pt0['seq_length'] = torch.ones_like(
-            batch['seq_length']) * partition_length
-        batch_pt0['intrinsic'] = batch['intrinsic']
-        batch_pt0['quality'] = batch['quality']
-        batch_pt0['drone_type'] = batch['drone_type']
-        batch_pt0['noise_embed'] = batch['noise_embed']
-        T.ToPILImage()(make_grid(rearrange(batch_pt0['images'],
-                                           'b l c h w -> (b l) c h w'), normalize=True)
-                       ).save('frames.jpg')
-        batch_pt1 = {key: value[:, partition_length:] for key, value in batch.items()
-                     if key != 'seq_length' and key != 'intrinsic' and key != 'attention_mask' and 'label' not in key
-                     and 'quality' not in key and 'drone_type' not in key and 'noise' not in key}
-        batch_pt1['attention_mask'] = batch['attention_mask']
-        batch_pt1['seq_length'] = (
-            batch['seq_length'] - batch_pt0['seq_length']).clip(0)
-        batch_pt1['intrinsic'] = batch['intrinsic']
-        T.ToPILImage()(make_grid(rearrange(batch_pt1['images'],
-                                           'b l c h w -> (b l) c h w'), normalize=True)
-                       ).save('frames.jpg')
-
-        out = model(**batch)
-        # settings for auto-regressive generation
-        model_kwargs = {'output_attentions': False,
-                        'output_hidden_states': True,
-                        'use_cache': True}
-        out_pt0 = model(**batch_pt0, **model_kwargs)
-        out_pt1 = model(**batch_pt1,
-                        past_key_values=out_pt0.past_key_values,
-                        **model_kwargs)
-        print(torch.max((out_pt0.action_preds -
-                        out.action_preds[:, :partition_length]).norm(dim=-1)))
-        print(torch.max((out_pt1.action_preds -
-                        out.action_preds[:, partition_length:]).norm(dim=-1)))
-    seq_length = max(batch['seq_length'])
-    batch_pt = {'noise_embed': batch['noise_embed'],
-                'quality': batch['quality'],
-                'drone_type': batch['drone_type'],
-                'intrinsic': batch['intrinsic'],
-                }
-    out_gen = {
-        'drone_type_preds': [],
-        'action_preds': [],
-        'stop_preds': [],
-        'future_action_preds': [],
-    }
-    for t in range(seq_length):
-        batch_pt.update({key: value[:, :t + 1] for key, value in batch.items()
-                         if key != 'seq_length' and key != 'intrinsic' and 'label' not in key
-                         and 'quality' not in key and 'drone_type' not in key and 'noise' not in key})
-        batch_pt['seq_length'] = torch.ones_like(batch['seq_length']) * (t + 1)
-        outputs = model.expand_actions(**batch_pt)
-        if t == 0 and batch_pt['drone_type'] is None:
-            batch_pt['drone_type'] = (outputs.drone_type_preds > 0).long()
-        batch_pt['past_key_values'] = outputs.past_key_values
-        for key in out_gen.keys() & outputs.keys():
-            if key == 'drone_type_preds' and t == 0:
-                out_gen[key] == outputs[key]
-            out_gen[key].append(outputs[key])
-
-    for key in out_gen.keys():
-        if out_gen[key] and key != 'drone_type_preds':
-            out_gen[key] = torch.cat(out_gen[key], dim=1)
-        else:
-            pass
-    print(torch.max((out_gen['action_preds'][batch['attention_mask'].bool()] -
-                     out['action_preds'][batch['attention_mask'].bool()]).norm(dim=-1)))
-    print(torch.max((out_gen['stop_preds'][batch['attention_mask'].bool()] -
-                     out['stop_preds'][batch['attention_mask'].bool()])))
-    print(torch.max((out_gen['future_action_preds'][batch['attention_mask'].bool()] -
-                     out['future_action_preds'][batch['attention_mask'].bool()]).norm(dim=-1)))
     pass
 
 

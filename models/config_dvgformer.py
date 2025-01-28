@@ -71,9 +71,7 @@ class DVGFormerConfig(PretrainedConfig):
             self.vision_feat_dim = 384
             resolution = 224
         else:
-            raise ValueError(
-                f'Unsupported architecture "{vision_backbone}".'
-            )
+            raise ValueError(f'Unsupported architecture "{vision_backbone}".')
 
         self.use_depth = use_depth
 
@@ -120,8 +118,7 @@ class DVGFormerConfig(PretrainedConfig):
             # predict all actions in one token
             self.per_token_preds = self.n_action_to_predict
         else:
-            raise ValueError(
-                f'unknown prediction option: {self.prediction_option}')
+            raise ValueError(f'unknown prediction option: {self.prediction_option}')
 
         # max sequence length to consider
         self.max_model_frames = max_model_frames
@@ -148,16 +145,13 @@ class DVGFormerConfig(PretrainedConfig):
                 h, w = self.image_resolution
                 # match to the longer side
                 if h < w:
-                    image_featmap_shape = (int(np.round(image_featmap_shape * h / w)),
-                                           image_featmap_shape)
+                    image_featmap_shape = (int(np.round(image_featmap_shape * h / w)), image_featmap_shape)
                 else:
-                    image_featmap_shape = (image_featmap_shape,
-                                           int(np.round(image_featmap_shape * w / h)))
+                    image_featmap_shape = (image_featmap_shape, int(np.round(image_featmap_shape * w / h)))
             self.image_featmap_shape = image_featmap_shape
         else:
             self.image_featmap_shape = list(
-                map(lambda x: int(np.ceil(np.ceil(x / self.backbone_downsample))),
-                    self.image_resolution))
+                map(lambda x: int(np.ceil(np.ceil(x / self.backbone_downsample))), self.image_resolution))
         self.n_token_image = int(np.prod(self.image_featmap_shape))
         # begin of action token
         self.n_token_boa = n_token_boa
@@ -165,14 +159,12 @@ class DVGFormerConfig(PretrainedConfig):
         self.n_token_action = n_token_action
 
         # number of tokens for overall sequence conditioning
-        self.n_token_prepend = (
-            self.n_token_noise + self.n_token_quality + self.n_token_drone_type)
+        self.n_token_prepend = (self.n_token_noise + self.n_token_quality + self.n_token_drone_type)
         # number of tokens for one frame
         self.n_token_frame = (self.n_token_state + self.n_token_image + self.n_token_boa +
                               self.n_token_action * self.n_action_to_predict // self.per_token_preds)
         # number of tokens to predict within one frame
-        self.n_token_predict = (
-            self.n_token_action * self.n_action_to_predict // self.per_token_preds)
+        self.n_token_predict = (self.n_token_action * self.n_action_to_predict // self.per_token_preds)
 
         # padding side
         assert pad_side in ['left', 'right']
@@ -204,23 +196,16 @@ class DVGFormerConfig(PretrainedConfig):
                 n_layer=n_layer,
                 n_head=n_head,
                 attn_implementation=attn_implementation,
-                **kwargs)
+                **kwargs
+            )
         elif self.attention_model == 'Mamba':
             self.attention_model_config = MambaConfig(
                 hidden_size=hidden_size,
                 # state_size=4,
                 # num_hidden_layers=6,
-                residual_in_fp32=False)
+                residual_in_fp32=False
+            )
         self.hidden_size = hidden_size
 
         super().__init__(**kwargs)
         pass
-
-
-def main():
-    config = DVGFormerConfig()
-    pass
-
-
-if __name__ == '__main__':
-    main()

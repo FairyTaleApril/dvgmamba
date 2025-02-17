@@ -21,6 +21,7 @@ Official implementation of our paper:
     conda install pytorch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 pytorch-cuda=12.1 -c pytorch -c nvidia
     conda install -c conda-forge ffmpeg
     pip install -r requirements.txt
+    pip install mamba-ssm[dev]
     ```
 
 2. **Download evaluation data**

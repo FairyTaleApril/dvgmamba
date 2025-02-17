@@ -20,3 +20,4 @@ transformers[torch]==4.45.2
 transforms3d==0.4.1
 yt-dlp==2023.12.30
 wandb==0.16.6
+causal-conv1d==1.5.0.post8

@@ -4,7 +4,6 @@ from PIL import Image
 import numpy as np
 import torch
 import torchvision.transforms as T
-from setuptools.dist import sequence
 
 from blender.blender_camera_env import BlenderCameraEnv
 from models.modeling_dvgformer import DVGFormerModel
@@ -12,8 +11,8 @@ from utils.quaternion_operations import convert_to_local_frame
 from data.state_action_conversion import state_avg, state_std, action_avg, action_std
 
 
-infinigen_root = '/home/jinpeng-yu/Desktop/DVG_DATA/infinigen'
-blosm_root = '/home/jinpeng-yu/Desktop/DVG_DATA/blosm'
+infinigen_root = '/media/jinpeng-yu/Data1/DVG/infinigen'
+blosm_root = '/media/jinpeng-yu/Data1/DVG/blosm'
 
 
 def expand_episode(env, config, model, run_name, drone_type=1, seed=None, random_init_pose=False, re_render=True):
@@ -24,6 +23,9 @@ def expand_episode(env, config, model, run_name, drone_type=1, seed=None, random
     K = torch.tensor([[fx, 0, cx], [0, fy, cy], [0, 0, 1]], dtype=torch.float)
 
     model.eval()
+
+    # conv_state, ssm_state = model.transformer.allocate_inference_cache(batch_size=1, max_seqlen=None)
+    conv_state, ssm_state = None, None
 
     transform = T.Compose([
         T.ToTensor(),
@@ -49,6 +51,7 @@ def expand_episode(env, config, model, run_name, drone_type=1, seed=None, random
         'actions': torch.zeros(b, 0, model.n_action_to_predict, model.config.action_dim).cuda(),
         'seq_length': torch.zeros(b, dtype=torch.long).cuda(),
         'past_key_values': None,
+        'cache_params': None
     }
     sequence_lvl_keys = ['noise_embed', 'quality', 'drone_type', 'intrinsic']
     batch_pt = {}
@@ -63,6 +66,7 @@ def expand_episode(env, config, model, run_name, drone_type=1, seed=None, random
     chunk_size = model.max_model_frames // model.fps_downsample
     chunk_step = chunk_size // 2
     t_ref, q_ref = np.zeros(3), np.array([1, 0, 0, 0])
+
     while not done:
         # Convert observation to tensor & normalize
         img = Image.fromarray(observation['image']).convert('RGB')
@@ -86,16 +90,20 @@ def expand_episode(env, config, model, run_name, drone_type=1, seed=None, random
         # use batch_pt for expanding actions
         # only include the last frame
         batch_pt.update({key: value[:, t:] for key, value in batch.items()
-                         if key != 'seq_length' and key != 'attention_mask' and 'past' not in key and key not in sequence_lvl_keys})
+                         if key != 'seq_length' and key != 'attention_mask' and 'past' not in key and 'params' not in key and key not in sequence_lvl_keys})
         batch_pt['seq_length'] = torch.ones_like(batch['seq_length']) * 1
         batch_pt['time_steps'] = batch_pt['time_steps'] - chunk_offset
         # include all frames for attention mask and past_key_values
         batch_pt['attention_mask'] = batch['attention_mask']
         batch_pt['past_key_values'] = batch['past_key_values']
+        batch_pt['cache_params'] = batch['cache_params']
+
         # Get action from policy network
         with torch.no_grad():
-            outputs = model.expand_actions(**batch_pt)
+            outputs, conv_state, ssm_state = model.expand_actions(conv_state=conv_state, ssm_state=ssm_state, **batch_pt)
+
         batch['past_key_values'] = outputs.past_key_values
+        batch['cache_params'] = outputs.cache_params
         batch['actions'][:, -1] = outputs.action_preds
 
         # Revert actions to numpy array and denormalize
@@ -107,7 +115,7 @@ def expand_episode(env, config, model, run_name, drone_type=1, seed=None, random
                 _, _, vs[i], omegas[i] = convert_to_local_frame(
                     t_ref, q_ref, None, None, vs[i], omegas[i])
             actions = np.concatenate([vs, omegas], axis=1)
-        stop = outputs.stop_preds[0].item() > 0
+        # stop = outputs.stop_preds[0].item() > 0
 
         # Execute action in the environment
         observation, reward, terminated, truncated, info = env.step(
@@ -127,47 +135,6 @@ def expand_episode(env, config, model, run_name, drone_type=1, seed=None, random
         seq_len = info['seq_len']
 
         t += 1
-
-        # determine if need chunking
-        if (t - chunk_offset) == chunk_size and not done:
-            chunk_offset += chunk_step
-            # change the reference frame for tvecs and qvecs (also v and omega if they are in global frame)
-            states = (batch['states'].view(-1, env.state_dim).cpu().numpy() *
-                      state_std + state_avg)
-            _tvecs, _qvecs = states[:, :3], states[:, 3:]
-            tvecs, qvecs = np.zeros_like(_tvecs), np.zeros_like(_qvecs)
-            t_ref = _tvecs[chunk_offset * model.n_action_to_predict]
-            q_ref = _qvecs[chunk_offset * model.n_action_to_predict]
-            if model.motion_option == 'global':
-                actions = (batch['actions'].view(-1, env.action_dim).cpu().numpy() * action_std + action_avg)
-                _vs, _omegas = actions[:, :3], actions[:, 3:]
-                vs, omegas = np.zeros_like(_vs), np.zeros_like(_omegas)
-                for i in range(len(tvecs)):
-                    tvecs[i], qvecs[i], vs[i], omegas[i] = convert_to_local_frame(
-                        t_ref, q_ref, _tvecs[i], _qvecs[i], _vs[i], _omegas[i])
-                actions = np.concatenate([vs, omegas], axis=1)
-                batch['actions'] = torch.tensor(
-                    (actions - action_avg) / action_std, dtype=torch.float32).view(
-                    b, t, model.n_action_to_predict, model.config.action_dim).cuda()
-            else:
-                for i in range(len(tvecs)):
-                    tvecs[i], qvecs[i], _, _ = convert_to_local_frame(t_ref, q_ref, _tvecs[i], _qvecs[i])
-            states = np.concatenate([tvecs, qvecs], axis=1)
-            batch['states'] = torch.tensor(
-                (states - state_avg) / state_std, dtype=torch.float32).view(
-                b, t, model.n_action_to_predict, model.config.state_dim).cuda()
-            batch['attention_mask'] = batch['attention_mask'][:, -(chunk_size - chunk_step):]
-            # use batch_pt for getting the past_key_values
-            batch_pt.update({key: value[:, chunk_offset:] for key, value in batch.items()
-                            if key != 'seq_length' and key != 'attention_mask' and 'past' not in key and key not in sequence_lvl_keys})
-            batch_pt['seq_length'] = torch.ones_like(batch['seq_length']
-                                                     ) * (chunk_size - chunk_step)
-            batch_pt['time_steps'] = batch_pt['time_steps'] - chunk_offset
-            batch_pt['attention_mask'] = batch['attention_mask']
-            batch_pt['past_key_values'] = None
-            outputs = model(**batch_pt)
-            # only include last chunk_offset frames
-            batch['past_key_values'] = outputs.past_key_values
 
     # convert to video
     env.final_render(f'{"fpv" if drone_type else "nonfpv"}_{run_name}_return{total_reward:.2f}_crash{crash}',

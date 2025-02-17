@@ -185,6 +185,9 @@ class DVGFormerConfig(PretrainedConfig):
         # expand
         self.test_gt_forcing = test_gt_forcing
 
+
+
+
         # transformer config
         # kwargs.pop('gpt2_config', None)
         self.attention_model = attention_model
@@ -201,11 +204,16 @@ class DVGFormerConfig(PretrainedConfig):
         elif self.attention_model == 'Mamba':
             self.attention_model_config = MambaConfig(
                 hidden_size=hidden_size,
-                # state_size=4,
-                # num_hidden_layers=6,
-                residual_in_fp32=False
+                state_size=16,
+                num_hidden_layers=32,
+                conv_kernel=4,
+                residual_in_fp32=False,
+                return_dict=True
             )
         self.hidden_size = hidden_size
+
+
+
 
         super().__init__(**kwargs)
         pass

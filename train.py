@@ -14,7 +14,6 @@ from blender_eval import blender_simulation
 from models.config_dvgformer import DVGFormerConfig
 from models.modeling_dvgformer import DVGFormerModel
 
-
 warnings.filterwarnings("ignore")
 
 
@@ -122,8 +121,8 @@ def main(args):
         dataloader_drop_last=True,
         save_safetensors=False,
         # settings from llava
-        bf16=True,
-        tf32=True,
+        bf16=False,
+        tf32=False,
         save_total_limit=1,
         warmup_ratio=0.03,
         lr_scheduler_type='cosine',
@@ -147,10 +146,11 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='training script for DVGFormer')
-    parser.add_argument('--attention_model', type=str, default='GPT2', choices=['Mamba', 'GPT2'])
+    parser.add_argument('--attention_model', type=str, default='Mamba', choices=['Mamba', 'GPT2'])
     # data settings
-    parser.add_argument('--root', type=str, default='/home/jinpeng-yu/Desktop/DVG_DATA')
+    parser.add_argument('--root', type=str, default='/media/jinpeng-yu/Data1/DVG')
     parser.add_argument('--hdf5_fname', type=str, default='dataset_mini.h5')
+    # parser.add_argument('--hdf5_fname', type=str, default='dataset_2k_fpv.h5')
     # model settings
     parser.add_argument('--fps', type=int, default=3)
     parser.add_argument('--max_model_frames', type=int, default=150)

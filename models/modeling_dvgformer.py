@@ -10,7 +10,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
-from transformers import PreTrainedModel, GPT2Model, DepthAnythingForDepthEstimation, MambaModel, MambaCache, MambaForCausalLM
+from transformers import PreTrainedModel, GPT2Model, DepthAnythingForDepthEstimation, MambaModel
+from mamba_ssm import Mamba
 from transformers.utils import ModelOutput
 from models.config_dvgformer import DVGFormerConfig
 from data.state_action_conversion import state_avg, state_std, action_avg, action_std, reverse_states_actions_tensor
@@ -241,6 +242,9 @@ class DVGFormerModel(PreTrainedModel):
         )
         self.embed_ln = nn.LayerNorm(config.hidden_size)
 
+
+
+
         if self.config.attention_model == 'GPT2':
             self.transformer = GPT2Model(config.attention_model_config)
             # set the original positional embeddings to zero
@@ -249,8 +253,12 @@ class DVGFormerModel(PreTrainedModel):
             self.transformer.wpe.requires_grad_(False)
         elif self.config.attention_model == 'Mamba':
             self.transformer = MambaModel(config.attention_model_config)
+            # self.transformer = Mamba(d_model=self.hidden_size)
         else:
             raise InvalidConfig
+
+
+
 
         # binary classification for drone type, non-fpv vs fpv
         # take image features at t=0
@@ -414,6 +422,7 @@ class DVGFormerModel(PreTrainedModel):
             # attention mask always include the prepended quality and drone type tokens
             stacked_attn_mask = torch.cat([torch.ones([b, n_token], dtype=self.dtype, device=device),
                                            stacked_attn_mask], dim=1)
+
         if past_key_values is not None:
             stacked_attn_mask = torch.cat([torch.ones([b, past_key_values[0][0].shape[2]],
                                                       dtype=self.dtype, device=device),
@@ -465,8 +474,7 @@ class DVGFormerModel(PreTrainedModel):
         use_cache: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
-        cache_params = None,
-        mode: Optional[DVGFormerForwardMode] = DVGFormerForwardMode.Training
+        cache_params = None
     ) -> Union[Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor], DVGFormerOutput]:
         """
         Forward pass of the model given inputs.
@@ -567,9 +575,9 @@ class DVGFormerModel(PreTrainedModel):
         inputs_embeds[:, prepend_length:] += torch.stack(
             [self.cross_frame_pe(position_ids[:, prepend_length:]),
              self.in_frame_pe(within_frame_pos[:, prepend_length:])], dim=-1).flatten(-2)
-
         # sanity check
         inputs_embeds = inputs_embeds.to(self.dtype)
+
         # we feed in the input embeddings (not word indices as in NLP) to the model
         if self.config.attention_model == 'GPT2':
             past_key_values = None if past_key_values is None else tuple(
@@ -586,16 +594,18 @@ class DVGFormerModel(PreTrainedModel):
             )
             hidden_states = transformer_outputs[0]
         elif self.config.attention_model == 'Mamba':
-            attention_mask = attention_mask if (attention_mask is not None and 0 in attention_mask) else None
-
             transformer_outputs = self.transformer(
                 inputs_embeds=inputs_embeds,
-                attention_mask=attention_mask,
-                use_cache=True,
-                cache_params=cache_params,
+                # attention_mask=attention_mask,
+                # use_cache=True,
+                # cache_params=None,
+                # cache_position = torch.tensor([position_ids[position_ids != -100][0].item()] * 4,
+                #                               dtype=torch.long, device=device),
                 output_hidden_states=output_hidden_states
             )
-            hidden_states = transformer_outputs[0]
+            hidden_states = transformer_outputs.last_hidden_state
+            # transformer_outputs = self.transformer(hidden_states=inputs_embeds)
+            # hidden_states = transformer_outputs
         else:
             raise InvalidConfig
 
@@ -680,17 +690,13 @@ class DVGFormerModel(PreTrainedModel):
                 stop_preds=stop_preds,
                 future_action_preds=future_action_preds,
                 hidden_states=hidden_states,
-                cache_params=transformer_outputs.cache_params if mode == DVGFormerForwardMode.Generation else None
+                cache_params=None
             )
         else:
             raise InvalidConfig
 
-    def _reverse_states_actions(
-        self,
-        states: torch.FloatTensor,
-        actions: torch.FloatTensor,
-    ):
-        '''
+    def _reverse_states_actions(self, states: torch.FloatTensor, actions: torch.FloatTensor):
+        """
         Reverse the states and actions to get the next state.
         Args:
             states (torch.FloatTensor): [batch_size, n_action_to_predict, state_dim]
@@ -698,7 +704,7 @@ class DVGFormerModel(PreTrainedModel):
         Returns:
             next_states (torch.FloatTensor): [batch_size, n_action_to_predict, state_dim]
             (vs, omegas) (Tuple[torch.FloatTensor, torch.FloatTensor]): [batch_size, n_action_to_predict, 3]
-        '''
+        """
 
         device = states.device
 
@@ -727,8 +733,143 @@ class DVGFormerModel(PreTrainedModel):
                                 b=b, l=l, c=self.config.state_dim)
         return next_states, (vs, omegas)
 
+    def validate(
+        self,
+        conv_state,
+        ssm_state,
+        past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None,
+        attention_mask: Optional[torch.FloatTensor] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        within_frame_pos: Optional[torch.LongTensor] = None,
+        token_types: Optional[torch.LongTensor] = None,
+        output_hidden_states: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        cache_params=None
+    ): # -> Union[Tuple[torch.FloatTensor, torch.FloatTensor, torch.FloatTensor], DVGFormerOutput]:
+        # bool indicators
+        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_hidden_states = output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+
+        # L: stacked_length (padded_length * n_token_frame)
+        # l: padded_length
+        device = inputs_embeds.device
+        b, L = inputs_embeds.shape[:2]
+        # l = int(np.ceil(L / self.n_token_frame))
+        # if L % self.n_token_frame != 0:
+        #     # only predict the last frame (for generation)
+        #     l = min(l, 1)
+
+        assert attention_mask is not None
+        assert position_ids is not None
+        assert within_frame_pos is not None
+        assert token_types is not None
+
+        # if the input is inputs_embeds, drone_type_preds should have been calculated elsewhere
+        drone_type_preds = None
+
+        inputs_embeds = self.embed_ln(inputs_embeds)
+        # Note: we have kept the positional embeddings to 0 in the original GPT2 model
+        # token-level & frame-level positional embedding
+        prepend_length = (within_frame_pos == self.config.ignore_value).sum(dim=1)[0].item()
+        inputs_embeds[:, :prepend_length] += self.prepend_pe[:prepend_length]
+        inputs_embeds[:, prepend_length:] += torch.stack(
+            [self.cross_frame_pe(position_ids[:, prepend_length:]),
+             self.in_frame_pe(within_frame_pos[:, prepend_length:])], dim=-1).flatten(-2)
+
+        # sanity check
+        inputs_embeds = inputs_embeds.to(self.dtype)
+        # if self.past_input is None:
+        #     self.past_input = inputs_embeds
+        # else:
+        #     self.past_input = torch.cat([self.past_input, inputs_embeds], dim=1)
+
+        # we feed in the input embeddings (not word indices as in NLP) to the model
+        if self.config.attention_model == 'GPT2':
+            past_key_values = None if past_key_values is None else tuple(
+                tuple(pkv.to(self.dtype) for pkv in pkvs) for pkvs in past_key_values)
+
+            transformer_outputs = self.transformer(
+                inputs_embeds=inputs_embeds,
+                past_key_values=past_key_values,
+                attention_mask=attention_mask,
+                position_ids=torch.zeros_like(position_ids),
+                use_cache=True,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states
+            )
+            hidden_states = transformer_outputs[0]
+        elif self.config.attention_model == 'Mamba':
+            cache_position = torch.tensor([4 if inputs_embeds.shape[1] == 1 else 0], dtype=torch.long, device=device)
+
+            transformer_outputs = self.transformer(
+                inputs_embeds=inputs_embeds,
+                use_cache=True,
+                cache_params=cache_params,
+                cache_position=cache_position,
+                output_hidden_states=output_hidden_states
+            )
+            hidden_states = transformer_outputs.last_hidden_state
+            # transformer_outputs, conv_state, ssm_state = self.transformer.step(
+            #     hidden_states=inputs_embeds,
+            #     conv_state=conv_state,
+            #     ssm_state=ssm_state
+            # )
+            # hidden_states = transformer_outputs
+        else:
+            raise InvalidConfig
+
+        # get predictions
+        # input:    image * n_token_image, (state, action) * n_action_to_predict
+        # predict:  (action, next_state) * n_action_to_predict, stop
+
+        # token_types: 0 for predicting nothing, 1 for next state pred, 2 for action pred, 3 for both state and action pred, 4 for stop pred
+        # predict next action
+        # if self.past_input.shape[1] != token_types.shape[1]:
+        #     token_types_padding = torch.zeros((1, self.past_input.shape[1] - token_types.shape[1]), dtype=torch.bool, device=device)
+        #     token_types = torch.cat((token_types_padding, token_types), dim=1)
+
+        pred_action_pos = (token_types == 2) | (token_types == 3)
+        if pred_action_pos.any():
+            action_preds = self.predict_action(hidden_states)
+            # action_preds = self.predict_action(hidden_states[pred_action_pos])
+            action_preds = action_preds.view([b, 1, -1, self.config.action_dim])
+        else:
+            action_preds = None
+
+        # predict begin-of-frame / end-of-sequence
+        # first state to predict action
+        stop_preds = None
+        future_action_preds = None
+
+        if self.config.attention_model == 'GPT2':
+            return DVGFormerOutput(
+                loss=None,
+                drone_type_preds=drone_type_preds,
+                action_preds=action_preds,
+                stop_preds=stop_preds,
+                future_action_preds=future_action_preds,
+                past_key_values=transformer_outputs.past_key_values,
+                hidden_states=transformer_outputs.hidden_states,
+                attentions=transformer_outputs.attentions
+            )
+        elif self.config.attention_model == 'Mamba':
+            return DVGFormerOutput(
+                loss=None,
+                drone_type_preds=drone_type_preds,
+                action_preds=action_preds,
+                stop_preds=stop_preds,
+                future_action_preds=future_action_preds,
+                hidden_states=hidden_states,
+                cache_params=transformer_outputs.cache_params
+            ), conv_state, ssm_state
+        else:
+            raise InvalidConfig
+
     def expand_actions(
         self,
+        conv_state,
+        ssm_state,
         noise_embed: Optional[torch.LongTensor] = None,
         quality: Optional[torch.LongTensor] = None,
         drone_type: Optional[torch.LongTensor] = None,
@@ -740,7 +881,8 @@ class DVGFormerModel(PreTrainedModel):
         seq_length: Optional[torch.LongTensor] = None,
         past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None,
         attention_mask: Optional[torch.FloatTensor] = None,
-    ) -> DVGFormerOutput:
+        cache_params = None,
+    ): # -> DVGFormerOutput:
         """
         Expand the actions for one (current) pair of image & state (for generation).
         There are three modes for expanding the action based on config.test_gt_forcing:
@@ -809,7 +951,8 @@ class DVGFormerModel(PreTrainedModel):
             'within_frame_pos': within_frame_pos[:, :end_idx],
             'token_types': token_types[:, :end_idx],
             'past_key_values': past_key_values,
-            'use_cache': True,
+            # 'use_cache': True,
+            'cache_params': cache_params
         }
 
         # predict the next self.n_action_to_predict actions & next_states
@@ -823,9 +966,12 @@ class DVGFormerModel(PreTrainedModel):
         gt_forcing = self.config.test_gt_forcing == 'allframe' and not (
             actions == self.config.ignore_value).any().item() and not (
             states == self.config.ignore_value).any().item()
+
         for i in range(self.n_token_predict + 1):
-            outputs = self.forward(**model_inputs)
+            outputs, conv_state, ssm_state = self.validate(conv_state, ssm_state, **model_inputs)
+
             model_inputs['past_key_values'] = outputs.past_key_values
+            model_inputs['cache_params'] = outputs.cache_params
             if outputs.action_preds is not None:
                 # action
                 if self.per_token_preds == 1:
@@ -854,12 +1000,16 @@ class DVGFormerModel(PreTrainedModel):
                         executed_states[:, :, i + 1] = states[:, :, i + 1]
                     else:
                         executed_states[:, :, i + 1] = next_states[:, :, i]
+
             # stop
-            if outputs.stop_preds is not None:
-                stop_preds = outputs.stop_preds
-            # future action
-            if outputs.future_action_preds is not None:
-                future_action_preds = outputs.future_action_preds
+            stop_preds = outputs.stop_preds
+            future_action_preds = outputs.future_action_preds
+            # if outputs.stop_preds is not None:
+            #     stop_preds = outputs.stop_preds
+            # # future action
+            # if outputs.future_action_preds is not None:
+            #     future_action_preds = outputs.future_action_preds
+
             # next token
             if self.n_token_action == 1 and i < pred_steps:
                 next_embeds = self.embed_action(executed_actions.to(self.dtype)[:, -1, [i]])
@@ -887,7 +1037,8 @@ class DVGFormerModel(PreTrainedModel):
             past_key_values=outputs.past_key_values,
             hidden_states=outputs.hidden_states,
             attentions=outputs.attentions,
-        )
+            cache_params=outputs.cache_params
+        ), conv_state, ssm_state
 
 
 def main():

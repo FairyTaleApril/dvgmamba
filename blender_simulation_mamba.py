@@ -168,4 +168,4 @@ if __name__ == '__main__':
     dvg_model = DVGMambaModel(dvgmamba_config).cuda().bfloat16()
 
     blender_config = BlenderSimulationConfig(logdir='logdir', run_name='run_name', args_dict=args_dict)
-    blender_simulation(dvg_model, '/home/jinpeng-yu/Desktop/dvgformer/logs/unit_test', blender_config)
+    blender_simulation(dvg_model, '/home/jinpeng-yu/Desktop/dvgmamba/logs/unit_test', blender_config)

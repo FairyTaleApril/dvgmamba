@@ -16,8 +16,8 @@ Official implementation of our paper:
 ## Installation
 1. **Create and activate a Conda environment**:
     ```sh
-    conda create -n dvgformer python=3.10
-    conda activate dvgformer
+    conda create -n dvg python=3.10
+    conda activate dvg
     conda install pytorch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 pytorch-cuda=12.1 -c pytorch -c nvidia
     conda install -c conda-forge ffmpeg
     pip install -r requirements.txt

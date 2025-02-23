@@ -51,11 +51,11 @@ def main():
         dvgmamba_config = DVGMambaConfig(args_dict=args_dict)
         dvgmamba_config.save_config(fpath=f'{logdir}/dvgmamba_config.json')
 
-        blender_simulation_config = BlenderSimulationConfig(logdir=logdir, run_name=run_name, args_dict=args_dict)
-        blender_simulation_config.save_config(fpath=f'{logdir}/blender_simulation_config.json')
-
         drone_path_dataset_config = DronePathDatasetConfig(args_dict=args_dict)
         drone_path_dataset_config.save_config(fpath=f'{logdir}/drone_path_dataset_config.json')
+
+        blender_simulation_config = BlenderSimulationConfig(logdir=logdir, run_name=run_name, args_dict=args_dict)
+        blender_simulation_config.save_config(fpath=f'{logdir}/blender_simulation_config.json')
 
         model = DVGMambaModel(config=dvgmamba_config).to(dvgmamba_config.dtype)
         model.print_num_parameters()
@@ -63,8 +63,8 @@ def main():
         train_dataset = DronePathDataset(config=drone_path_dataset_config)
 
         training_args = TrainingArguments(
-            run_name=run_name,
             output_dir=logdir,
+            run_name=run_name,
 
             num_train_epochs=args_dict['epochs'],
             per_device_train_batch_size=args_dict['batch_size'],
@@ -109,8 +109,7 @@ def get_args_dict():
     # Global settings
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--load_checkpoint', type=bool, default=False)
-    parser.add_argument('--checkpoint_path', type=str,
-                        default='logs/Mamba 02-23 22-32')
+    parser.add_argument('--checkpoint_path', type=str, default='logs/Mamba 02-23 22-32')
 
     # BaseConfig settings
     parser.add_argument('--motion_option', type=str, default='local', choices=['local', 'global'])
@@ -132,8 +131,7 @@ def get_args_dict():
     parser.add_argument('--use_depth', type=bool, default=True)
     parser.add_argument('--max_model_frames', type=int, default=150)
     parser.add_argument('--fix_image_width', type=bool, default=True)
-    parser.add_argument('--prediction_option', type=str,
-                        default='iterative', choices=['iterative', 'one-shot'])
+    parser.add_argument('--prediction_option', type=str, default='iterative', choices=['iterative', 'one-shot'])
     # Token settings
     parser.add_argument('--n_token_state', type=int, default=1)
     parser.add_argument('--n_token_boa', type=int, default=1)

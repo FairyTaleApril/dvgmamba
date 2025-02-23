@@ -4,17 +4,17 @@ from typing import Optional, Any
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from mamba_ssm.models.mixer_seq_simple import MixerModel
 from mamba_ssm.utils.generation import InferenceParams
-from transformers import PreTrainedModel
 from transformers.utils import ModelOutput
 
 from configs.config_dvgmamba import DVGMambaConfig
-from models.mixer_seq_simple import MixerModel
+# from models.mixer_seq_simple import MixerModel
 from models.tokenizer import FrameTokenizer
 
 
 @dataclass
-class DVGFormerOutput(ModelOutput):
+class DVGMambaOutput(ModelOutput):
     loss: Optional[torch.Tensor] = None
     action_preds: Optional[torch.Tensor] = None
     cache: Optional[Any] = None
@@ -22,7 +22,7 @@ class DVGFormerOutput(ModelOutput):
 
 class DVGMambaModel(nn.Module):
     """
-    Drone VideoGraphy Transformer Model.
+    Drone VideoGraphy Mamba Model.
     """
 
     def __init__(self, config: DVGMambaConfig):
@@ -67,7 +67,7 @@ class DVGMambaModel(nn.Module):
         actions: Optional[torch.Tensor] = None,
         action_labels: Optional[torch.Tensor] = None,
         cache: Optional[Any] = None,
-    ) -> DVGFormerOutput:
+    ) -> DVGMambaOutput:
         """
         Args:
             images (torch.Tensor): [batch_size, padded_length, 3, height, width]
@@ -76,7 +76,7 @@ class DVGMambaModel(nn.Module):
             action_labels (torch.Tensor): [batch_size, padded_length, n_action_to_predict, action_dim]
             cache (torch.Tensor)
         Returns:
-            DVGFormerOutput: the output of the model
+            DVGMambaOutput: the output of the model
         """
         images = images.to(device=self.device, dtype=self.dtype)
         if states is not None:
@@ -102,7 +102,7 @@ class DVGMambaModel(nn.Module):
             loss_action = F.l1_loss(action_preds, action_labels[:, -1, :, :].unsqueeze(1).to(self.dtype), reduction='none').mean(dim=[2, 3])
             loss = (loss_action * self.loss_coef_action).mean()
 
-            return DVGFormerOutput(
+            return DVGMambaOutput(
                 loss=loss,
                 action_preds=action_preds,
                 cache=None
@@ -149,7 +149,7 @@ class DVGMambaModel(nn.Module):
             #     input_embeddings = input_embeddings[:, -1, :].unsqueeze(1)
             #     all_input_embeddings = torch.cat([all_input_embeddings, input_embeddings], dim=1)
 
-            return DVGFormerOutput(
+            return DVGMambaOutput(
                 loss=None,
                 action_preds=action_preds.unsqueeze(1),
                 cache=all_input_embeddings

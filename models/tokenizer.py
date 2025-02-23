@@ -75,12 +75,8 @@ class ImageTokenizer(nn.Module):
         """
         Args:
             images (torch.Tensor): [batch_size, num_channels, height, width]
-            states (torch.Tensor): [batch_size, state_dim]
-            intrinsic (torch.Tensor): [batch_size, 3, 3]
         Returns:
             image_tokens (torch.Tensor): [batch_size, n_token_image, hidden_size]
-            original_feature (torch.Tensor): [batch_size, hidden_size, height, width]
-            disparity (torch.Tensor): [batch_size, height, width]
         """
         original_feature = self.extract_backbone_features(images)
         feature = self.bottleneck(original_feature)

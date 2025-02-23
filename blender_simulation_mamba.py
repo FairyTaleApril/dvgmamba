@@ -16,10 +16,10 @@ infinigen_root = '/media/jinpeng-yu/Data1/DVG/infinigen'
 blosm_root = '/media/jinpeng-yu/Data1/DVG/blosm'
 
 
-def expand_episode(env, model, run_name, config: BlenderSimulationConfig):
+def expand_episode(env, model, run_name, seed, random_init_pose, config: BlenderSimulationConfig):
     # Reset environment
     env.drone_type = config.drone_type
-    observation, info = env.reset(seed=config.seed, random_init_pose=config.random_init_pose)
+    observation, info = env.reset(seed=seed, random_init_pose=random_init_pose)
 
     transform = T.Compose([
         T.ToTensor(),
@@ -47,7 +47,7 @@ def expand_episode(env, model, run_name, config: BlenderSimulationConfig):
         # Get action from policy network
         with torch.no_grad():
             outputs = model.forward(images=image, cache=cache)
-        # batch['actions'][:, -1] = outputs.action_preds
+
         cache = outputs.cache
 
         # Revert actions to numpy array and denormalize
@@ -104,8 +104,7 @@ def blender_simulation(model, logdir, config: BlenderSimulationConfig):
         for scene in infinigen_fpaths:
             if i < len(infinigen_fpaths[scene]):
                 scene_fpaths.append(infinigen_fpaths[scene][i])
-    num_repeats = np.ones(len(scene_fpaths), dtype=int) * 3
-    num_repeats[:len(blosm_fpaths)] = 3
+    num_repeats = np.ones(len(scene_fpaths), dtype=int) * config.num_repeats
 
     results = []
     for i in tqdm.tqdm(range(min(config.num_runs, len(scene_fpaths)))):
@@ -127,11 +126,17 @@ def blender_simulation(model, logdir, config: BlenderSimulationConfig):
                 motion_option=config.motion_option,
                 cropped_sensor_width=config.cropped_sensor_width) as env:
             for j in range(num_repeats[i]):
-                config.seed = i * 100 + j + 1
-                total_reward, crash, seq_len = expand_episode(env, model, run_name, config)
+                seed = i * 100 + j + 1
+                total_reward, crash, seq_len = expand_episode(
+                    env=env,
+                    model=model,
+                    run_name=run_name,
+                    seed=seed,
+                    random_init_pose=(j > 0),
+                    config=config)
                 results.append({
                     'render_fpath': scene_fpath,
-                    'seed': config.seed,
+                    'seed': seed,
                     'total_reward': total_reward,
                     'crash': crash,
                     'seq_len': seq_len

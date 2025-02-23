@@ -1,18 +1,17 @@
 import argparse
 import datetime
-import json
 import os
 import warnings
 
 import torch
-import wandb
 from transformers import Trainer, TrainingArguments, set_seed
 
+import wandb
 from configs.config_blender_simulation import BlenderSimulationConfig
 from configs.config_drone_path_dataset import DronePathDatasetConfig
 from configs.config_dvgmamba import DVGMambaConfig
 from data.drone_path_dataset import DronePathDataset, collate_fn_video_drone_path_dataset
-from models.blender_simulation_mamba import blender_simulation
+from blender_simulation_mamba import blender_simulation
 from models.modeling_dvgmamba import DVGMambaModel
 
 warnings.filterwarnings("ignore")
@@ -23,8 +22,7 @@ def main():
 
     set_seed(args_dict.get('seed', 42))
 
-    current_time = datetime.datetime.now().strftime("%m-%d %H-%M")
-    run_name = f'Mamba {current_time}'
+    run_name = f'Mamba {datetime.datetime.now().strftime("%m-%d %H-%M")}'
     logdir = f'logs/{run_name}'
     os.makedirs(logdir, exist_ok=True)
     print(logdir)
@@ -32,79 +30,92 @@ def main():
     os.environ['WANDB_MODE'] = 'offline'
     wandb.init(project='dvgmamba', name=run_name)
 
-    dvgmamba_config = DVGMambaConfig(args_dict=args_dict)
-    drone_path_dataset_config = DronePathDatasetConfig(args_dict=args_dict)
-    blender_simulation_config = BlenderSimulationConfig(logdir='logdir', run_name='run_name', args_dict=args_dict)
+    if args_dict['load_checkpoint']:
+        checkpoint_path = args_dict['checkpoint_path']
+        checkpoint_dirs = [f for f in os.listdir(checkpoint_path) if
+                           'checkpoint' in f and os.path.isdir(os.path.join(checkpoint_path, f))]
+        checkpoint_fpath = f"{args_dict['checkpoint_path']}/{checkpoint_dirs[0]}/pytorch_model.bin"
 
-    # save args as json
-    with open(f'{logdir}/dvgmamba_config.json', 'w') as f:
-        config_string, config_dict = dvgmamba_config.print_config(need_print=False)
-        json.dump(config_string, f, indent=4)
-    with open(f'{logdir}/drone_dataset_config.json', 'w') as f:
-        config_string, config_dict = drone_path_dataset_config.print_config(need_print=False)
-        json.dump(config_string, f, indent=4)
-    with open(f'{logdir}/blender_config.json', 'w') as f:
-        config_string, config_dict = blender_simulation_config.print_config(need_print=False)
-        json.dump(config_string, f, indent=4)
+        dvgmamba_config = DVGMambaConfig(args_dict=args_dict)
+        dvgmamba_config.load_config(fpath=f'{checkpoint_path}/dvgmamba_config.json')
 
-    # torch.inverse multi-threading RuntimeError: lazy wrapper should be called at most once
-    # torch.inverse(torch.ones((1, 1), device="cuda:0"))
-    # torch.backends.cuda.matmul.allow_tf32 = True
-    # torch.backends.cudnn.allow_tf32 = True
+        blender_simulation_config = BlenderSimulationConfig(logdir=logdir, run_name=run_name, args_dict=args_dict)
+        blender_simulation_config.load_config(fpath=f'{checkpoint_path}/blender_simulation_config.json')
+        blender_simulation_config.logdir = logdir
+        blender_simulation_config.run_name = run_name
 
-    model = DVGMambaModel(dvgmamba_config).to(dvgmamba_config.dtype)
-    model.print_num_parameters()
+        model = DVGMambaModel(config=dvgmamba_config).to(dvgmamba_config.dtype)
+        model.print_num_parameters()
+        model.load_model(checkpoint_fpath)
+    else:
+        dvgmamba_config = DVGMambaConfig(args_dict=args_dict)
+        dvgmamba_config.save_config(fpath=f'{logdir}/dvgmamba_config.json')
 
-    train_dataset = DronePathDataset(drone_path_dataset_config)
+        blender_simulation_config = BlenderSimulationConfig(logdir=logdir, run_name=run_name, args_dict=args_dict)
+        blender_simulation_config.save_config(fpath=f'{logdir}/blender_simulation_config.json')
 
-    training_args = TrainingArguments(
-        run_name=run_name,
-        output_dir=logdir,
+        drone_path_dataset_config = DronePathDatasetConfig(args_dict=args_dict)
+        drone_path_dataset_config.save_config(fpath=f'{logdir}/drone_path_dataset_config.json')
 
-        num_train_epochs=args_dict['epochs'],
-        per_device_train_batch_size=args_dict['batch_size'],
-        gradient_accumulation_steps=args_dict['gradient_accumulation_steps'],
+        model = DVGMambaModel(config=dvgmamba_config).to(dvgmamba_config.dtype)
+        model.print_num_parameters()
 
-        learning_rate=args_dict['learning_rate'],
-        lr_scheduler_type='cosine',
-        warmup_ratio=0.03,
+        train_dataset = DronePathDataset(config=drone_path_dataset_config)
 
-        dataloader_num_workers=args_dict['num_workers'],
-        dataloader_drop_last=True,
-        logging_steps=args_dict['logging_steps'],
+        training_args = TrainingArguments(
+            run_name=run_name,
+            output_dir=logdir,
 
-        save_safetensors=False,
-        bf16=True,
-        tf32=False,
+            num_train_epochs=args_dict['epochs'],
+            per_device_train_batch_size=args_dict['batch_size'],
+            gradient_accumulation_steps=args_dict['gradient_accumulation_steps'],
 
-        report_to='all',
-        save_strategy="epoch",
-        save_total_limit=1,
-    )
-    trainer = Trainer(
-        model,
-        training_args,
-        train_dataset=train_dataset,
-        data_collator=collate_fn_video_drone_path_dataset
-    )
+            learning_rate=args_dict['learning_rate'],
+            lr_scheduler_type='cosine',
+            warmup_ratio=0.03,
 
-    trainer.train()
-    trainer.save_model()
-    del trainer
+            dataloader_num_workers=args_dict['num_workers'],
+            dataloader_drop_last=True,
+            logging_steps=args_dict['logging_steps'],
 
-    # clean up cuda memory
-    torch.cuda.empty_cache()
-    blender_simulation(model, logdir, blender_simulation_config)
+            save_safetensors=False,
+            bf16=True,
+            tf32=True,
+
+            report_to='all',
+            save_strategy="epoch",
+            save_total_limit=1,
+        )
+        trainer = Trainer(
+            model,
+            training_args,
+            train_dataset=train_dataset,
+            data_collator=collate_fn_video_drone_path_dataset
+        )
+
+        trainer.train()
+        trainer.save_model()
+        del trainer
+
+        # clean up cuda memory
+        torch.cuda.empty_cache()
+
+    blender_simulation(model=model, logdir=logdir, config=blender_simulation_config)
 
 
 def get_args_dict():
     parser = argparse.ArgumentParser(description='Training script')
 
-    # base_config settings
+    # Global settings
     parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--load_checkpoint', type=bool, default=False)
+    parser.add_argument('--checkpoint_path', type=str,
+                        default='logs/Mamba 02-23 22-32')
+
+    # BaseConfig settings
     parser.add_argument('--motion_option', type=str, default='local', choices=['local', 'global'])
 
-    # data settings
+    # Dataset settings
     parser.add_argument('--root', type=str, default='/media/jinpeng-yu/Data1/DVG')
     parser.add_argument('--hdf5_fname', type=str, default='dataset_mini.h5')
     # parser.add_argument('--hdf5_fname', type=str, default='dataset_2k_fpv.h5')
@@ -114,7 +125,7 @@ def get_args_dict():
     parser.add_argument('--random_temporal_crop', type=bool, default=False)
     parser.add_argument('--random_color_jitter', type=bool, default=False)
 
-    # model settings
+    # Model settings
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--dtype', type=str, default='torch.bfloat16')
     parser.add_argument('--n_layer', type=int, default=12)
@@ -123,7 +134,7 @@ def get_args_dict():
     parser.add_argument('--fix_image_width', type=bool, default=True)
     parser.add_argument('--prediction_option', type=str,
                         default='iterative', choices=['iterative', 'one-shot'])
-    # token settings
+    # Token settings
     parser.add_argument('--n_token_state', type=int, default=1)
     parser.add_argument('--n_token_boa', type=int, default=1)
     parser.add_argument('--n_token_action', type=int, default=1)
@@ -132,16 +143,18 @@ def get_args_dict():
     parser.add_argument('--loss_coef_action', type=float, default=1)
     parser.add_argument('--loss_coef_stop', type=float, default=0)
 
-    # training settings
+    # Training settings
     parser.add_argument('--epochs', type=int, default=2)  # 5
     parser.add_argument('--batch_size', type=int, default=1)
     parser.add_argument('--learning_rate', type=float, default=1e-4)
     parser.add_argument('--gradient_accumulation_steps', type=int, default=4)
     parser.add_argument('--num_workers', type=int, default=4)
-
-    # simulation settings
-    parser.add_argument('--num_runs', type=int, default=2)
     parser.add_argument('--logging_steps', type=int, default=50)  # 50
+
+    # Simulation settings
+    parser.add_argument('--num_runs', type=int, default=2)
+    parser.add_argument('--num_repeats', type=int, default=3)
+    parser.add_argument('--re_render', type=bool, default=True)
 
     args = parser.parse_args()
     args_dict = vars(args)

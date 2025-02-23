@@ -159,3 +159,8 @@ class DVGMambaModel(nn.Module):
         total_params = sum(p.numel() for p in self.parameters())
         print(f"Total number of parameters: {total_params}")
         return total_params
+
+    def load_model(self, checkpoint_path):
+        print(f"Loading model checkpoint from {checkpoint_path}")
+        self.load_state_dict(torch.load(checkpoint_path, map_location=self.device))
+        self.to(device=self.device, dtype=self.dtype)

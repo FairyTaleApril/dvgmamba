@@ -9,9 +9,9 @@ class BlenderSimulationConfig(BaseConfig):
         self.logdir = logdir
         self.run_name = run_name
 
-        self.seed = args_dict.get('seed', 42)
         self.num_runs = args_dict.get('num_runs', 40)
-        self.random_init_pose = args_dict.get('random_init_pose', False)
+        self.num_repeats = args_dict.get('num_repeats', 3)
+        self.random_init_pose = args_dict.get('random_init_pose', True)
         self.video_duration = args_dict.get('video_duration', 10)
         self.re_render = args_dict.get('re_render', True)
 

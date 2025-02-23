@@ -56,7 +56,7 @@ class BaseConfig:
         else:
             super().__setattr__(name, value)
 
-    def print_config(self, need_print=True):
+    def get_config_dict(self):
         config_dict = {}
         for key, value in vars(self).items():
             if 'device' in key or 'dtype' in key:
@@ -65,14 +65,42 @@ class BaseConfig:
                 config_dict[key] = value
 
         config_dict["base_config"] = self.base_config
+        return config_dict
 
+    def print_config(self, need_print=True):
+        config_dict = self.get_config_dict()
         config_string = json.dumps(config_dict, indent=4)
+
         if need_print:
             print(config_string)
-        return config_string, config_dict
+        return config_string
+
+    def save_config(self, fpath):
+        with open(fpath, 'w') as f:
+            config_dict = self.get_config_dict()
+            json.dump(config_dict, f, indent=4)
+
+    @classmethod
+    def load_config(cls, fpath):
+        print(f"Loading config from {fpath}")
+
+        with open(fpath, 'r') as f:
+            config_data = json.load(f)
+
+            if not isinstance(config_data, dict):
+                raise ValueError(f"Expected config data to be a dictionary, but got {type(config_data)}")
+
+            if 'base_config' in config_data:
+                base_config = config_data.pop('base_config')
+                cls.base_config.update(base_config)
+
+            for key, value in config_data.items():
+                setattr(cls, key, value)
 
 
 if __name__ == '__main__':
+    import os
+    import datetime
     from train import get_args_dict
     from configs.config_dvgmamba import DVGMambaConfig
     from configs.config_drone_path_dataset import DronePathDatasetConfig
@@ -80,17 +108,27 @@ if __name__ == '__main__':
 
     args_dict = get_args_dict()
 
+    run_name = f'BaseConfig test {datetime.datetime.now().strftime("%m-%d %H-%M")}'
+    logdir = f'logs/{run_name}'
+    os.makedirs(logdir, exist_ok=True)
+
     dvgmamba_config = DVGMambaConfig(args_dict)
     dataset_config = DronePathDatasetConfig(args_dict)
-    blender_config = BlenderSimulationConfig(logdir='logdir', run_name='run_name', args_dict=args_dict)
+    blender_config = BlenderSimulationConfig(logdir=logdir, run_name=run_name, args_dict=args_dict)
 
-    print(dvgmamba_config.print_config())
-    print(dataset_config.print_config())
-    print(blender_config.print_config())
+    dvgmamba_config.print_config()
+    dataset_config.print_config()
+    blender_config.print_config()
 
     dvgmamba_config.hidden_size = 1
     dvgmamba_config.n_layer = 1
 
-    print(dvgmamba_config.print_config())
-    print(dataset_config.print_config())
-    print(blender_config.print_config())
+    dvgmamba_config.print_config()
+    dataset_config.print_config()
+    blender_config.print_config()
+
+    dvgmamba_config.save_config(fpath=f'{logdir}/dvgmamba_config.json')
+
+    new_dvgmamba_config = DVGMambaConfig(args_dict)
+    new_dvgmamba_config.load_config(fpath=f'{logdir}/dvgmamba_config.json')
+    new_dvgmamba_config.print_config()

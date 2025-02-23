@@ -105,7 +105,7 @@ def add_angular_velocity_to_quaternion(q1, omega_global, dt, option='quaternion'
     Adds angular velocity to a quaternion.
 
     Parameters:
-        q1 (array): The initial quaternion [w, x, y, z].
+        q1 (np.array): The initial quaternion [w, x, y, z].
         omega_local (array): The angular velocity vector [wx, wy, wz] for delta_q.
         dt (float): The time step.
 

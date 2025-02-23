@@ -55,7 +55,7 @@ action_std = np.array([0.5, 0.5, 0.5,
 
 
 def get_states_actions(tvecs, qvecs, motion_option='global', action_downsample=1):
-    '''
+    """
     Get the states and actions from tvecs, qvecs, vs, and omegas.
         tvec(t)
         qvec(t)
@@ -66,45 +66,45 @@ def get_states_actions(tvecs, qvecs, motion_option='global', action_downsample=1
     action = [v(t), omega(t)] for frames in the global/local coordinate system
 
     Args:
-        tvecs (array): (N + 1) x 3 array of translation vectors for all frames.
-        qvecs (array): (N + 1) x 4 array of rotation quaternions for all frames.
+        tvecs (np.array): (N + 1) x 3 array of translation vectors for all frames.
+        qvecs (np.array): (N + 1) x 4 array of rotation quaternions for all frames.
         motion_option (str): 'global' or 'local' motion.
         action_downsample (int): Downsample rate for the actions.
     Returns:
         states (array): (N // action_downsample) x 7, States (position, rotation).
         actions (tensor): (N // action_downsample) x 6, Actions (velocity, angular velocity).
-    '''
+    """
     # time steps
     num_frames = (len(tvecs) - 1) // action_downsample
+
     # States: camera pose (location and rotation) in the global coordinate system
-    states = np.concatenate([tvecs, qvecs], axis=1)[
-        np.arange(num_frames) * action_downsample]
+    states = np.concatenate([tvecs, qvecs], axis=1)[np.arange(num_frames) * action_downsample]
+
     # Actions: camera motion (velocities and angular velocities) in the global/local coordinate system (relative to the *current* frame)
     # stack every action_downsample frames
     vs = np.zeros([num_frames, 3])
     omegas = np.zeros([num_frames, 3])
     for i in range(num_frames):
-        vs[i] = tvecs[(i + 1) * action_downsample] - \
-            tvecs[i * action_downsample]
-        omegas[i] = quaternions_to_angular_velocity(
-            qvecs[i * action_downsample], qvecs[(i + 1) * action_downsample], 1)
+        vs[i] = tvecs[(i + 1) * action_downsample] - tvecs[i * action_downsample]
+        omegas[i] = quaternions_to_angular_velocity(qvecs[i * action_downsample], qvecs[(i + 1) * action_downsample], 1)
+
     if motion_option == 'global':
         actions = np.concatenate([vs, omegas], axis=1)
     elif motion_option == 'local':
         actions = []
         for i in range(num_frames):
             _, _, v_local, omega_local = convert_to_local_frame(
-                tvecs[i * action_downsample], qvecs[i * action_downsample],
-                None, None, vs[i], omegas[i])
+                tvecs[i * action_downsample], qvecs[i * action_downsample], None, None, vs[i], omegas[i])
             action = np.concatenate([v_local, omega_local])
             actions.append(action)
     else:
         raise ValueError('Invalid motion_option')
+
     return states, np.stack(actions)
 
 
 def reverse_states_actions(states, actions, motion_option='global'):
-    '''
+    """
     Reconstruct tvecs, qvecs, vs, and omegas using the states and actions.
         tvec(t)
         qvec(t)
@@ -125,7 +125,7 @@ def reverse_states_actions(states, actions, motion_option='global'):
         next_qvecs (array): N x 4 array of rotation quaternions.
         vs (array): N x 3 array of velocities.
         omegas (array): N x 3 array of angular.
-    '''
+    """
     N = len(states)
     # global coord system (w.r.t. the initial frame)
     next_tvecs = np.zeros([N, 3])

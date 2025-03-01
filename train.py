@@ -3,11 +3,11 @@ import datetime
 import json
 import os
 import warnings
-
-import torch
-from transformers import Trainer, TrainingArguments, set_seed
+warnings.filterwarnings("ignore")
 
 import wandb
+import torch
+from transformers import Trainer, TrainingArguments, set_seed
 
 from blender import render
 from configs.config_blender_simulation import BlenderSimulationConfig
@@ -17,7 +17,6 @@ from data.drone_path_dataset import DronePathDataset, collate_fn_video_drone_pat
 from blender_simulation_mamba import blender_simulation
 from models.modeling_dvgmamba import DVGMambaModel
 
-warnings.filterwarnings("ignore")
 
 
 def main():
@@ -123,8 +122,8 @@ def get_args_dict():
 
     # Dataset settings
     parser.add_argument('--root', type=str, default='/media/jinpeng-yu/Data1/DVG')
-    # parser.add_argument('--hdf5_fname', type=str, default='dataset_mini.h5')
-    parser.add_argument('--hdf5_fname', type=str, default='dataset_2k_fpv.h5')
+    parser.add_argument('--hdf5_fname', type=str, default='dataset_mini.h5')
+    # parser.add_argument('--hdf5_fname', type=str, default='dataset_2k_fpv.h5')
     # augmentation settings
     parser.add_argument('--random_horizontal_flip', type=bool, default=False)
     parser.add_argument('--random_scaling', type=bool, default=False)
@@ -149,18 +148,18 @@ def get_args_dict():
     parser.add_argument('--loss_coef_stop', type=float, default=0)
 
     # Training settings
-    parser.add_argument('--epochs', type=int, default=2)  # 5
+    parser.add_argument('--epochs', type=int, default=5)  # 5
     parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--learning_rate', type=float, default=1e-4)
     parser.add_argument('--max_grad_norm', type=float, default=0.3)
     parser.add_argument('--gradient_accumulation_steps', type=int, default=4)
     parser.add_argument('--num_workers', type=int, default=4)
-    parser.add_argument('--logging_steps', type=int, default=5)  # 50
+    parser.add_argument('--logging_steps', type=int, default=10)  # 50
 
     # Simulation settings
     parser.add_argument('--do_simulation', type=bool, default=True)
     parser.add_argument('--num_runs', type=int, default=14)
-    parser.add_argument('--num_repeats', type=int, default=3)
+    parser.add_argument('--num_repeats', type=int, default=5)
     parser.add_argument('--re_render', type=bool, default=True)
     # 'OPENIMAGEDENOISE': on CPUs, slower but more stable
     # 'OPTIX': on RTX GPUs, faster but more likely to cause glitches

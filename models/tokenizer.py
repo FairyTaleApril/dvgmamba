@@ -8,6 +8,15 @@ from einops import rearrange, repeat
 from configs.config_dvgmamba import DVGMambaConfig
 
 
+def see_params(all_params, new_params, pattern):
+    temp = rearrange(new_params, pattern).norm(dim=2, p=2, keepdim=True)
+    cat_params = torch.cat([
+        all_params,
+        temp
+    ], dim=1) if all_params is not None else temp
+    return cat_params
+
+
 class ImageTokenizer(nn.Module):
     """
     A class to extract image tokens based on a vision backbone and TokenLearner, following Robotics Transformer.
@@ -19,6 +28,7 @@ class ImageTokenizer(nn.Module):
             config (DVGMambaConfig): the configuration for the model
         """
         super().__init__()
+
         self.hidden_size = config.hidden_size
         self.use_depth = config.use_depth
         self.image_featmap_shape = config.image_featmap_shape
@@ -115,6 +125,7 @@ class FrameTokenizer(nn.Module):
         # tokens for each frame
         self.img_embedding = ImageTokenizer(config)
         self.boa_embedding = nn.Parameter(torch.randn(self.hidden_size))
+        # self.action_embedding = nn.Linear(self.action_dim, self.hidden_size)
         # self.state_embedding = nn.Sequential(
         #     nn.Linear(self.state_dim, self.hidden_size),
         #     nn.GELU(),
@@ -123,26 +134,17 @@ class FrameTokenizer(nn.Module):
         #     nn.Linear(self.hidden_size, self.hidden_size),
         #     # nn.LayerNorm(self.hidden_size)
         # )
-        # self.action_embedding = nn.Sequential(
-        #     nn.Linear(self.action_dim, self.hidden_size),
-        #     nn.GELU(),
-        #     nn.Linear(self.hidden_size, self.hidden_size),
-        #     nn.GELU(),
-        #     nn.Linear(self.hidden_size, self.hidden_size),
-        #     # nn.LayerNorm(self.hidden_size)
-        # )
-        # self.input_ln = nn.LayerNorm(self.hidden_size)
 
         # # within-frame positional embedding
         # self.in_frame_pe = nn.Embedding(50, self.hidden_size)
         # # cross-frame positional embeddings
         # self.cross_frame_pe = nn.Embedding(self.max_model_frames, self.hidden_size)
 
-        self.see_images = None
         self.see_boa = None
         self.see_pe = None
-        self.see_input_embeddings = None
+        self.see_images = None
         self.see_image_embeddings = None
+        self.see_input_embeddings = None
 
     def __call__(
         self,
@@ -165,12 +167,10 @@ class FrameTokenizer(nn.Module):
         """
         device = images.device
         b, l = images.shape[:2]
-        assert b == 1, 'Only support batch_size=1'
         assert l <= self.max_model_frames, 'Sequence length exceeds max_seqlen'
         assert images.shape[1] % self.n_token_image != 0
 
-        n_token_frame = self.n_token_image + 1 + (actions.shape[2] if actions is not None else 0)
-
+        # n_token_frame = self.n_token_image + self.n_token_boa + (actions.shape[2] if actions is not None else 0)
         # # within-frame positional embeddings
         # within_frame_pos = torch.arange(n_token_frame, dtype=torch.long, device=device)
         # within_frame_pos = repeat(within_frame_pos, 'n -> b (l n)', b=b, l=l)
@@ -180,71 +180,58 @@ class FrameTokenizer(nn.Module):
         # cross_frame_pos = repeat(cross_pos_ids, 'l -> b (l n)', b=b, n=n_token_frame)
         # frame_pe = self.in_frame_pe(within_frame_pos) + self.cross_frame_pe(cross_frame_pos)
 
-        images = rearrange(images, "b l c h w -> (b l) c h w")
+        rearranged_images = rearrange(images, "b l c h w -> (b l) c h w")
+        image_embeddings = self.img_embedding(rearranged_images)  # (b l) n d
+        image_embeddings = rearrange(image_embeddings, "(b l) n d -> b l n d", b=b, l=l)
 
-        if see:
-            temp = rearrange(images, "bl c h w -> bl (c h w)").sum(dim=1, keepdim=True)
-            temp = rearrange(temp, "b 1 -> 1 b")
-            self.see_images = torch.cat([self.see_images, temp], dim=0) if self.see_images is not None else temp
-            # temp = frame_pe.sum(dim=2, keepdim=True)
-            # self.see_pe = torch.cat([self.see_pe, temp], dim=1) if self.see_pe is not None else temp
-
-        image_embeddings = self.img_embedding(images).unsqueeze(0)  # b l n d
-        boa_embeddings = repeat(self.boa_embedding, 'd -> b l 1 d', b=b, l=l)
-
-        if see:
-            temp = rearrange(image_embeddings, "b l n d -> b (l n) d").sum(dim=2, keepdim=True).sum(dim=1, keepdim=True)
-            temp = rearrange(temp, "n 1 1 -> 1 n")
-            self.see_image_embeddings = torch.cat([self.see_image_embeddings, temp], dim=0) \
-                if self.see_image_embeddings is not None else temp
-            temp = rearrange(boa_embeddings, 'b l 1 d -> b l d').sum(dim=2, keepdim=True)
-            temp = rearrange(temp, "n 1 1 -> 1 n")
-            self.see_boa = torch.cat([self.see_boa, temp], dim=0) \
-                if self.see_boa is not None else temp
+        boa_embeddings = repeat(self.boa_embedding, 'd -> b l n d', b=b, l=l, n=self.n_token_boa)
 
         # state_embeddings = self.state_embedding(states.to(self.dtype))
-        if actions is not None:
-            action_embeddings = self.action_embedding(actions)
-            input_embeddings = torch.cat([
-                image_embeddings,
-                boa_embeddings,
-                # state_embeddings[:, :, :self.n_token_state],
-                action_embeddings
-            ], dim=2)
+        # if actions is not None:
+        #     action_embeddings = self.action_embedding(actions)
+        #     input_embeddings = torch.cat([
+        #         image_embeddings,
+        #         boa_embeddings,
+        #         # state_embeddings[:, :, :self.n_token_state],
+        #         action_embeddings
+        #     ], dim=2)
+        #
+        #     # token_types: 0 for predicting nothing, 1 for next state pred, 2 for action pred,
+        #     # 3 for both state and action pred, 4 for stop pred
+        #     token_types = torch.cat([
+        #         torch.ones([b, l, self.n_token_image], device=device, dtype=torch.long) * 0,
+        #         torch.ones([b, l, 1], device=device, dtype=torch.long) * 2,  # boa
+        #         # torch.ones([b, l, self.n_token_state], device=device, dtype=torch.long) * 2,
+        #         torch.ones([b, l, actions.shape[2] - 1], device=device, dtype=torch.long) * 2,
+        #         torch.ones([b, l, 1], device=device, dtype=torch.long) * 0  # last action
+        #     ], dim=2)
+        # else:
+        # input_embeddings = image_embeddings
+        input_embeddings = torch.cat([
+            image_embeddings,
+            boa_embeddings,
+            # state_embeddings[:, :, :self.n_token_state],
+        ], dim=2)
 
-            # token_types: 0 for predicting nothing, 1 for next state pred, 2 for action pred,
-            # 3 for both state and action pred, 4 for stop pred
-            # token_types = torch.cat([
-            #     torch.ones([b, l, self.n_token_image], device=device, dtype=torch.long) * 0,
-            #     torch.ones([b, l, 1], device=device, dtype=torch.long) * 2,  # boa
-            #     # torch.ones([b, l, self.n_token_state], device=device, dtype=torch.long) * 2,
-            #     torch.ones([b, l, self.n_action_to_predict - 1], device=device, dtype=torch.long) * 2,
-            #     torch.ones([b, l, 1], device=device, dtype=torch.long) * 0  # last action
-            # ], dim=2)
-        else:
-            # input_embeddings = image_embeddings
-            input_embeddings = torch.cat([
-                image_embeddings,
-                boa_embeddings,
-                # state_embeddings[:, :, :self.n_token_state],
-            ], dim=2)
-
-            # token_types: 0 for predicting nothing, 1 for next state pred, 2 for action pred,
-            # 3 for both state and action pred, 4 for stop pred
-            # token_types = torch.cat([
-            #     torch.ones([b, l, self.n_token_image], device=device, dtype=torch.long) * 0,
-            #     torch.ones([b, l, 1], device=device, dtype=torch.long) * 2,  # boa
-            # ], dim=2)
+        # token_types: 0 for predicting nothing, 1 for next state pred, 2 for action pred,
+        # 3 for both state and action pred, 4 for stop pred
+        token_types = torch.cat([
+            torch.ones([b, l, self.n_token_image], device=device, dtype=torch.long) * 0,
+            torch.ones([b, l, self.n_token_boa * self.n_action_to_predict], device=device, dtype=torch.long) * 2,  # boa
+        ], dim=2)
 
         input_embeddings = rearrange(input_embeddings, 'b l n d -> b (l n) d')
         # input_embeddings = input_embeddings + frame_pe
-        # input_embeddings = self.input_ln(input_embeddings + frame_pe)
-        # token_types = rearrange(token_types, 'b l n -> b (l n)')
+
+        token_types = rearrange(token_types, 'b l n -> b (l n)')
 
         if see:
-            temp = input_embeddings.sum(dim=2, keepdim=True)
-            self.see_input_embeddings = torch.cat([self.see_input_embeddings, temp], dim=1) \
-                if self.see_input_embeddings is not None else temp
+            self.see_images = see_params(self.see_images, images, 'b l c h w -> b l (c h w)')
+            self.see_image_embeddings = see_params(self.see_image_embeddings, image_embeddings, 'b l n d -> b (l n) d')
+            self.see_boa = see_params(self.see_boa, boa_embeddings, 'b l 1 d -> b l d')
+            self.see_input_embeddings = see_params(self.see_input_embeddings, input_embeddings, 'b n d -> b n d')
 
-        # return input_embeddings, token_types
-        return input_embeddings, None
+            # temp = frame_pe.sum(dim=2, keepdim=True)
+            # self.see_pe = torch.cat([self.see_pe, temp], dim=1) if self.see_pe is not None else temp
+
+        return input_embeddings, token_types

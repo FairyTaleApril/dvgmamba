@@ -33,7 +33,10 @@ def expand_episode(env, model, run_name, seed, random_init_pose, config: Blender
     t_ref, q_ref = np.zeros(3), np.array([1, 0, 0, 0])
 
     model.eval()
-    cache = None
+    cache = {
+        'cross_pos_ids': 0,
+        'all_input_embeddings': None
+    }
 
     while not done:
         # Convert observation to tensor & normalize
@@ -49,6 +52,7 @@ def expand_episode(env, model, run_name, seed, random_init_pose, config: Blender
             outputs = model.forward(images=image, cache=cache)
 
         cache = outputs.cache
+        cache['cross_pos_ids'] += 1
 
         # Revert actions to numpy array and denormalize
         actions = (outputs.action_preds.float()[0, 0].cpu().numpy() * action_std + action_avg)

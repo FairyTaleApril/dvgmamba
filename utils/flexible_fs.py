@@ -55,8 +55,7 @@ class FlexibleFileSystem:
             # if no tar/h5 files found either, then raise an error
             archive_candidates = glob.glob(f'{fpath}*')
             if not archive_candidates:
-                raise FileNotFoundError(
-                    f'No such file or directory: {fpath}')
+                raise FileNotFoundError(f'No such file or directory: {fpath}')
         # find the first tar/h5 file
         self.archive_path = None
         for candidate in archive_candidates:

@@ -1,5 +1,6 @@
 import argparse
 import datetime
+import json
 import os
 import warnings
 
@@ -7,6 +8,8 @@ import torch
 from transformers import Trainer, TrainingArguments, set_seed
 
 import wandb
+
+from blender import render
 from configs.config_blender_simulation import BlenderSimulationConfig
 from configs.config_drone_path_dataset import DronePathDatasetConfig
 from configs.config_dvgmamba import DVGMambaConfig
@@ -18,10 +21,6 @@ warnings.filterwarnings("ignore")
 
 
 def main():
-    args_dict = get_args_dict()
-
-    set_seed(args_dict.get('seed', 42))
-
     run_name = f'Mamba {datetime.datetime.now().strftime("%m-%d %H-%M")}'
     logdir = f'logs/{run_name}'
     os.makedirs(logdir, exist_ok=True)
@@ -29,6 +28,13 @@ def main():
 
     os.environ['WANDB_MODE'] = 'offline'
     wandb.init(project='dvgmamba', name=run_name)
+
+    args_dict = get_args_dict()
+    with open(f'{logdir}/args.json', 'w') as f:
+        json.dump(args_dict, f, indent=4)
+
+    set_seed(args_dict['seed'])
+    render.default_denoiser = args_dict['default_denoiser']
 
     if args_dict['load_checkpoint']:
         checkpoint_path = args_dict['checkpoint_path']
@@ -73,6 +79,7 @@ def main():
             learning_rate=args_dict['learning_rate'],
             lr_scheduler_type='cosine',
             warmup_ratio=0.03,
+            max_grad_norm=args_dict['max_grad_norm'],
 
             dataloader_num_workers=args_dict['num_workers'],
             dataloader_drop_last=True,
@@ -86,21 +93,21 @@ def main():
             save_strategy="epoch",
             save_total_limit=1,
         )
+
         trainer = Trainer(
             model,
             training_args,
             train_dataset=train_dataset,
             data_collator=collate_fn_video_drone_path_dataset
         )
-
         trainer.train()
         trainer.save_model()
         del trainer
 
+    if args_dict['do_simulation']:
         # clean up cuda memory
         torch.cuda.empty_cache()
-
-    blender_simulation(model=model, logdir=logdir, config=blender_simulation_config)
+        blender_simulation(model=model, logdir=logdir, config=blender_simulation_config)
 
 
 def get_args_dict():
@@ -109,15 +116,15 @@ def get_args_dict():
     # Global settings
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--load_checkpoint', type=bool, default=False)
-    parser.add_argument('--checkpoint_path', type=str, default='logs/Mamba 02-23 22-32')
+    parser.add_argument('--checkpoint_path', type=str, default='logs/Mamba 03-01 11-12')
 
     # BaseConfig settings
     parser.add_argument('--motion_option', type=str, default='local', choices=['local', 'global'])
 
     # Dataset settings
     parser.add_argument('--root', type=str, default='/media/jinpeng-yu/Data1/DVG')
-    parser.add_argument('--hdf5_fname', type=str, default='dataset_mini.h5')
-    # parser.add_argument('--hdf5_fname', type=str, default='dataset_2k_fpv.h5')
+    # parser.add_argument('--hdf5_fname', type=str, default='dataset_mini.h5')
+    parser.add_argument('--hdf5_fname', type=str, default='dataset_2k_fpv.h5')
     # augmentation settings
     parser.add_argument('--random_horizontal_flip', type=bool, default=False)
     parser.add_argument('--random_scaling', type=bool, default=False)
@@ -143,16 +150,21 @@ def get_args_dict():
 
     # Training settings
     parser.add_argument('--epochs', type=int, default=2)  # 5
-    parser.add_argument('--batch_size', type=int, default=1)
+    parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--learning_rate', type=float, default=1e-4)
+    parser.add_argument('--max_grad_norm', type=float, default=0.3)
     parser.add_argument('--gradient_accumulation_steps', type=int, default=4)
     parser.add_argument('--num_workers', type=int, default=4)
-    parser.add_argument('--logging_steps', type=int, default=50)  # 50
+    parser.add_argument('--logging_steps', type=int, default=5)  # 50
 
     # Simulation settings
-    parser.add_argument('--num_runs', type=int, default=2)
+    parser.add_argument('--do_simulation', type=bool, default=True)
+    parser.add_argument('--num_runs', type=int, default=14)
     parser.add_argument('--num_repeats', type=int, default=3)
     parser.add_argument('--re_render', type=bool, default=True)
+    # 'OPENIMAGEDENOISE': on CPUs, slower but more stable
+    # 'OPTIX': on RTX GPUs, faster but more likely to cause glitches
+    parser.add_argument('--default_denoiser', type=str, default='OPENIMAGEDENOISE', choices=['OPTIX', 'OPENIMAGEDENOISE'])
 
     args = parser.parse_args()
     args_dict = vars(args)

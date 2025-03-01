@@ -79,8 +79,8 @@ def get_top_level_groups(file_path):
 
 
 def main(mode='delete'):
-    root_path = '/media/jinpeng-yu/Data/dvg_data'
-    h5_file_path = os.path.join(root_path, 'dataset_small_fpv.h5')
+    root_path = '/media/jinpeng-yu/Data1/DVG'
+    h5_file_path = os.path.join(root_path, 'dataset_full.h5')
 
     top_level_groups = get_top_level_groups(h5_file_path)
     print(len(top_level_groups))

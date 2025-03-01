@@ -454,8 +454,7 @@ class DronePathDataset(Dataset):
                 img = img.transpose(Image.FLIP_LEFT_RIGHT)
             # color jitter
             if self.random_color_jitter:
-                img = color_jitter(img, brightness, contrast, saturation, hue,
-                                   jitter_fn_idx)
+                img = color_jitter(img, brightness, contrast, saturation, hue, jitter_fn_idx)
             img = self.transform_img(img)
             images.append(img)
         images = torch.stack(images)
@@ -477,8 +476,7 @@ class DronePathDataset(Dataset):
         scene_part = int(scene.split('_')[1])
         next_scene = f'{scene.split("_")[0]}_{scene_part + 1}'
         is_partial_scene = f'{video_id}/scene{next_scene}' in self.all_scenes
-        if (end_idx >= len(recons_df) // self.fps_downsample * self.fps_downsample and
-                not is_partial_scene):
+        if end_idx >= len(recons_df) // self.fps_downsample * self.fps_downsample and not is_partial_scene:
             stop_labels[-1] = 1
 
         data_dict = {
@@ -513,11 +511,12 @@ class DronePathDataset(Dataset):
 
 def collate_fn_video_drone_path_dataset(
     instances: Sequence[Dict],
-    pad_side='right', pad_value=0, label_pad_value=-100
+    pad_side='right', pad_value=0, label_pad_value=-1000
 ) -> Dict[str, torch.Tensor]:
     if 'noise_embed' not in instances[0]:
         batch = {
             'images': padding([instance['images'] for instance in instances], pad_side, pad_value),
+            'seq_length': torch.tensor([instance['seq_length'] for instance in instances]),
             'states': padding([instance['states'] for instance in instances], pad_side, pad_value),
             'actions': padding([instance['actions'] for instance in instances], pad_side, pad_value),
             'action_labels': padding([instance['action_labels'] for instance in instances], pad_side, label_pad_value),

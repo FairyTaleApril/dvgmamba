@@ -24,7 +24,7 @@ class BaseConfig:
         'action_fps': 3,
 
         'num_quantile_bins': 10,
-        'ignore_value': -100,
+        'ignore_value': -1000,
     }
 
     def __init__(self):

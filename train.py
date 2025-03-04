@@ -27,7 +27,7 @@ def main():
 
     os.environ['WANDB_MODE'] = 'offline'
     os.environ["WANDB_DIR"] = logdir
-    wandb.init(project='dvgmamba', name=run_name, config={"save_code": True})
+    wandb.init(project='dvgmamba', name=run_name, save_code=True)
 
     args_dict = get_args_dict()
     with open(f'{logdir}/args.json', 'w') as f:

@@ -9,6 +9,9 @@ import h5py
 import os
 import json
 
+from data.drone_path_dataset import get_video_stat
+from utils.flexible_fs import FlexibleFileSystem
+
 
 def extract_h5_contents(h5_file, output_path):
     os.makedirs(output_path, exist_ok=True)
@@ -78,6 +81,36 @@ def get_top_level_groups(file_path):
     return top_level_groups
 
 
+def delete_unwanted_list(root_path, h5_file_path):
+    h5_fs = FlexibleFileSystem(h5_file_path)
+
+    delete_names = []
+    for video_id in tqdm(sorted(h5_fs.listdir(root_path))):
+        try:
+            with h5_fs.open(f'{root_path}/{video_id}/data.json') as f:
+                metadata = json.load(f)
+            video_stat = get_video_stat(metadata)
+
+            if not video_stat['is_drone'] or video_stat['has_skip_words']:
+                delete_names.append(video_id)
+                continue
+            if not video_stat['is_landscape']:
+                delete_names.append(video_id)
+                continue
+            if not video_stat['is_fpv']:
+                delete_names.append(video_id)
+                continue
+        except:
+            delete_names.append(video_id)
+            continue
+
+    h5_fs.close()
+
+    print(delete_names)
+    print(len(delete_names))
+    return delete_names
+
+
 def main(mode='delete'):
     root_path = '/media/jinpeng-yu/Data1/DVG'
     h5_file_path = os.path.join(root_path, 'dataset_full.h5')
@@ -91,6 +124,11 @@ def main(mode='delete'):
 
         with h5py.File(h5_file_path, 'r+') as h5_file:
             delete_h5_contents(h5_file, random_delete)
+    elif mode == 'delete_unwanted':
+        delete_names = delete_unwanted_list(root_path, h5_file_path)
+
+        with h5py.File(h5_file_path, 'r+') as h5_file:
+            delete_h5_contents(h5_file, delete_names)
     elif mode == 'extract':
         output_folder = os.path.join(root_path, 'dataset_small_fpv')
 

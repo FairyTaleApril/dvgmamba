@@ -162,6 +162,7 @@ class FrameTokenizer(nn.Module):
         states: Optional[torch.Tensor] = None,
         actions: Optional[torch.Tensor] = None,
         cross_pos_ids: Optional[int] = None,
+        past_input_embeddings: Optional[torch.Tensor] = None,
         see=False
     ):
         """
@@ -199,15 +200,21 @@ class FrameTokenizer(nn.Module):
         image_embeddings = self.img_embedding(rearranged_images)  # (b l) n d
         image_embeddings = rearrange(image_embeddings, "(b l) n d -> b l n d", b=b, l=l)
 
-        state_embeddings = self.state_embedding(states.to(self.dtype)) if states is not None else None
+        state_embeddings = self.state_embedding(states.to(device=self.device, dtype=self.dtype)) if states is not None else None
         boa_embeddings = repeat(self.boa_embedding, 'd -> b l n d', b=b, l=l, n=self.n_token_boa)
-        action_embeddings = self.action_embedding(actions.to(self.dtype)) if actions is not None else None
+        action_embeddings = self.action_embedding(actions.to(device=self.device, dtype=self.dtype)) if actions is not None else None
 
         embeddings_to_concat = [state_embeddings, image_embeddings, boa_embeddings, action_embeddings]
         valid_embeddings = [embeddings for embeddings in embeddings_to_concat if embeddings is not None]
         input_embeddings = torch.cat(valid_embeddings, dim=2)
         input_embeddings = rearrange(input_embeddings, 'b l n d -> b (l n) d')
         input_embeddings = input_embeddings + frame_pe
+
+        if past_input_embeddings is not None:
+            input_embeddings = torch.cat([
+                past_input_embeddings.to(device=self.device, dtype=self.dtype),
+                input_embeddings,
+            ], dim=1)
 
         tokens_to_concat = [
             torch.ones([b, l, self.n_token_image], device=device, dtype=torch.long) * 0,

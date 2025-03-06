@@ -84,14 +84,6 @@ class DVGMambaModel(nn.Module):
             DVGMambaOutput: the output of the model
         """
         images = images.to(device=self.device, dtype=self.dtype)
-        if seq_length is not None:
-            seq_length = seq_length.to(device=self.device, dtype=self.dtype)
-        if states is not None:
-            states = states.to(device=self.device, dtype=self.dtype)
-        if actions is not None:
-            actions = actions.to(device=self.device, dtype=self.dtype)
-        if action_labels is not None:
-            action_labels = action_labels.to(device=self.device, dtype=self.dtype)
 
         if self.training:
             b, l = images.shape[:2]
@@ -111,8 +103,9 @@ class DVGMambaModel(nn.Module):
             action_preds = self.predict_action(hidden_states[pred_action_pos])
             action_preds = action_preds.view([b, l, -1, self.action_dim])
 
-            mask = torch.arange(l, device=self.device).unsqueeze(0) < seq_length.unsqueeze(1)  # [b, l]
-            loss_action = F.l1_loss(action_preds, action_labels, reduction='none').mean(dim=[2, 3])  # [b, l]
+            mask = torch.arange(l, device=self.device).unsqueeze(0) < seq_length.to(device=self.device, dtype=self.dtype).unsqueeze(1)  # [b, l]
+            loss_action = F.l1_loss(action_preds, action_labels.to(device=self.device, dtype=self.dtype), reduction='none')
+            loss_action = loss_action.mean(dim=[2, 3])  # [b, l]
             loss_action = (loss_action * mask.float()).sum(dim=1) / mask.sum(dim=1).clamp(min=1)
             loss = (loss_action * self.loss_coef_action).mean()
 
@@ -126,22 +119,16 @@ class DVGMambaModel(nn.Module):
 
             states = rearrange(states, 'n d -> 1 1 n d')
             action_preds = torch.zeros([b, l, self.n_action_to_predict, self.action_dim], device=self.device, dtype=self.dtype)
-            if cache['all_input_embeddings'] is not None:
-                cache['all_input_embeddings'] = cache['all_input_embeddings'].to(device=self.device, dtype=self.dtype)
-            all_input_embeddings = None
 
             for i in range(self.n_action_to_predict):
-                input_embeddings, _ = self.embedding(
+                all_input_embeddings, _ = self.embedding(
                     images=images,
                     states=states,
-                    actions=action_preds[..., :i+1, :] if i != 0 else None,
+                    actions=action_preds[..., :i, :] if i != 0 else None,
                     cross_pos_ids=cross_pos_ids,
+                    past_input_embeddings=cache['all_input_embeddings'],
                     see=True
                 )
-                all_input_embeddings = torch.cat([
-                    cache['all_input_embeddings'],
-                    input_embeddings
-                ], dim=1) if cache['all_input_embeddings'] is not None else input_embeddings
 
                 hidden_states = self.mamba(
                     input_ids=all_input_embeddings,
@@ -156,6 +143,15 @@ class DVGMambaModel(nn.Module):
 
             if cache['cross_pos_ids'] >= 28:
                 pass
+
+            all_input_embeddings, _ = self.embedding(
+                images=images,
+                states=states,
+                actions=action_preds,
+                cross_pos_ids=cross_pos_ids,
+                past_input_embeddings=cache['all_input_embeddings'],
+                see=False
+            )
 
             return DVGMambaOutput(
                 loss=None,

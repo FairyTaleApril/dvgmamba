@@ -18,16 +18,21 @@ from blender_simulation_mamba import blender_simulation
 from models.modeling_dvgmamba import DVGMambaModel
 
 
-
 def main():
     run_name = f'Mamba {datetime.datetime.now().strftime("%m-%d %H-%M")}'
     logdir = f'logs/{run_name}'
     os.makedirs(logdir, exist_ok=True)
     print(logdir)
 
-    os.environ['WANDB_MODE'] = 'offline'
-    os.environ["WANDB_DIR"] = logdir
-    wandb.init(project='dvgmamba', name=run_name, save_code=True)
+    code_fpath = ["blender/*.py", "configs/*.py", "data/*.py", "models/*.py", "utils/*.py", "blender_simulation_mamba.py", "train.py"]
+    wandb.init(
+        project='dvgmamba',
+        name=run_name,
+        mode='offline',
+        dir=logdir
+    )
+    for fpath in code_fpath:
+        wandb.save(fpath)
 
     args_dict = get_args_dict()
     with open(f'{logdir}/args.json', 'w') as f:
@@ -115,15 +120,15 @@ def get_args_dict():
     # Global settings
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--load_checkpoint', type=bool, default=False)
-    parser.add_argument('--checkpoint_path', type=str, default='logs/Mamba 03-03 00-44')
+    parser.add_argument('--checkpoint_path', type=str, default='logs/Mamba 03-05 23-15')
 
     # BaseConfig settings
     parser.add_argument('--motion_option', type=str, default='local', choices=['local', 'global'])
 
     # Dataset settings
     parser.add_argument('--root', type=str, default='/media/jinpeng-yu/Data1/DVG')
-    # parser.add_argument('--hdf5_fname', type=str, default='dataset_mini.h5')
-    parser.add_argument('--hdf5_fname', type=str, default='dataset_2k_fpv.h5')
+    parser.add_argument('--hdf5_fname', type=str, default='dataset_mini.h5')
+    # parser.add_argument('--hdf5_fname', type=str, default='dataset_2k_fpv.h5')
     # augmentation settings
     parser.add_argument('--random_horizontal_flip', type=bool, default=False)
     parser.add_argument('--random_scaling', type=bool, default=False)
@@ -148,22 +153,22 @@ def get_args_dict():
     parser.add_argument('--loss_coef_stop', type=float, default=0)
 
     # Training settings
-    parser.add_argument('--epochs', type=int, default=2)  # 5
+    parser.add_argument('--epochs', type=int, default=5)  # 5
     parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--learning_rate', type=float, default=1e-4)
     parser.add_argument('--max_grad_norm', type=float, default=0.3)
     parser.add_argument('--gradient_accumulation_steps', type=int, default=4)
     parser.add_argument('--num_workers', type=int, default=4)
-    parser.add_argument('--logging_steps', type=int, default=10)  # 50
+    parser.add_argument('--logging_steps', type=int, default=10)
 
     # Simulation settings
     parser.add_argument('--do_simulation', type=bool, default=True)
     parser.add_argument('--num_runs', type=int, default=14)
     parser.add_argument('--num_repeats', type=int, default=3)
     parser.add_argument('--re_render', type=bool, default=True)
-    # 'OPENIMAGEDENOISE': on CPUs, slower but more stable
     # 'OPTIX': on RTX GPUs, faster but more likely to cause glitches
-    parser.add_argument('--default_denoiser', type=str, default='OPENIMAGEDENOISE', choices=['OPTIX', 'OPENIMAGEDENOISE'])
+    # 'OPENIMAGEDENOISE': on CPUs, slower but more stable
+    parser.add_argument('--default_denoiser', type=str, default='OPTIX', choices=['OPTIX', 'OPENIMAGEDENOISE'])
 
     args = parser.parse_args()
     args_dict = vars(args)

@@ -4,6 +4,7 @@ from typing import Optional, Any
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from einops import rearrange
 from mamba_ssm.models.mixer_seq_simple import MixerModel
 from transformers.utils import ModelOutput
 
@@ -96,7 +97,9 @@ class DVGMambaModel(nn.Module):
             b, l = images.shape[:2]
 
             input_embeddings, token_types = self.embedding(
-                images=images
+                images=images,
+                states=states,
+                actions=actions
             )
 
             hidden_states = self.mamba(
@@ -120,30 +123,36 @@ class DVGMambaModel(nn.Module):
             )
         else:
             b, l, cross_pos_ids = 1, 1, cache['cross_pos_ids']
+
+            states = rearrange(states, 'n d -> 1 1 n d')
             action_preds = torch.zeros([b, l, self.n_action_to_predict, self.action_dim], device=self.device, dtype=self.dtype)
             if cache['all_input_embeddings'] is not None:
                 cache['all_input_embeddings'] = cache['all_input_embeddings'].to(device=self.device, dtype=self.dtype)
+            all_input_embeddings = None
 
-            input_embeddings, _ = self.embedding(
-                images=images,
-                cross_pos_ids=cross_pos_ids,
-                see=True
-            )
-            all_input_embeddings = torch.cat([
-                cache['all_input_embeddings'],
-                input_embeddings
-            ], dim=1) if cache['all_input_embeddings'] is not None else input_embeddings
+            for i in range(self.n_action_to_predict):
+                input_embeddings, _ = self.embedding(
+                    images=images,
+                    states=states,
+                    actions=action_preds[..., :i+1, :] if i != 0 else None,
+                    cross_pos_ids=cross_pos_ids,
+                    see=True
+                )
+                all_input_embeddings = torch.cat([
+                    cache['all_input_embeddings'],
+                    input_embeddings
+                ], dim=1) if cache['all_input_embeddings'] is not None else input_embeddings
 
-            hidden_states = self.mamba(
-                input_ids=all_input_embeddings,
-                inference_params=None
-            )
+                hidden_states = self.mamba(
+                    input_ids=all_input_embeddings,
+                    inference_params=None
+                )
 
-            action_preds += self.predict_action(hidden_states[..., -self.n_action_to_predict:, :])
+                action_preds[..., i, :] += self.predict_action(hidden_states[..., -1:, :])
 
-            if True:
-                self.see_hidden = see_params(self.see_hidden, hidden_states[..., -self.n_action_to_predict:, :], 'b n d -> b n d')
-                self.see_action = see_params(self.see_action, action_preds, 'b l n d -> b (l n) d')
+            # if True:
+            #     self.see_hidden = see_params(self.see_hidden, hidden_states[..., -self.n_action_to_predict:, :], 'b n d -> b n d')
+            #     self.see_action = see_params(self.see_action, action_preds, 'b l n d -> b (l n) d')
 
             if cache['cross_pos_ids'] >= 28:
                 pass

@@ -8,7 +8,7 @@ from PIL import Image
 
 from blender.blender_camera_env import BlenderCameraEnv
 from configs.config_blender_simulation import BlenderSimulationConfig
-from data.state_action_conversion import action_avg, action_std
+from data.state_action_conversion import action_avg, action_std, state_avg, state_std
 from models.modeling_dvgmamba import DVGMambaModel
 from utils.quaternion_operations import convert_to_local_frame
 
@@ -42,14 +42,15 @@ def expand_episode(env, model, run_name, seed, random_init_pose, config: Blender
         # Convert observation to tensor & normalize
         image = Image.fromarray(observation['image']).convert('RGB')
         image = transform(image)[None, None]
-        # state = (observation['state'] - state_avg) / state_std
-        # states = torch.stack(
-        #     [torch.tensor(state, dtype=torch.float)] +
-        #     [torch.ones([env.state_dim]) * model.config.ignore_value] * (model.n_action_to_predict - 1))
+        state = (observation['state'] - state_avg) / state_std
+        states = torch.stack(
+            [torch.tensor(state, dtype=torch.float)] +
+            [torch.ones([env.state_dim]) * config.ignore_value] * (model.n_action_to_predict - 1)
+        )
 
         # Get action from policy network
         with torch.no_grad():
-            outputs = model.forward(images=image, cache=cache)
+            outputs = model.forward(images=image, states=states, cache=cache)
 
         cache = outputs.cache
         cache['cross_pos_ids'] += 1
@@ -91,8 +92,7 @@ def blender_simulation(model, logdir, config: BlenderSimulationConfig):
                             continue
                         if scene not in infinigen_fpaths:
                             infinigen_fpaths[scene] = []
-                        infinigen_fpaths[scene].append(
-                            f'{infinigen_root}/{scene}/{random_seed}/fine/scene.blend')
+                        infinigen_fpaths[scene].append(f'{infinigen_root}/{scene}/{random_seed}/fine/scene.blend')
 
     # google map scenes
     blosm_fpaths = {}

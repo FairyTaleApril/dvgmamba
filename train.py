@@ -131,6 +131,7 @@ def get_args_dict():
     parser.add_argument('--root', type=str, default='/media/jinpeng-yu/Data1/DVG')
     parser.add_argument('--hdf5_fname', type=str, default='dataset_mini.h5')
     # parser.add_argument('--hdf5_fname', type=str, default='dataset_2k.h5')
+    parser.add_argument('--hdf5_fname', type=str, default='dataset_full.h5')
     # augmentation settings
     parser.add_argument('--random_horizontal_flip', type=bool, default=False)
     parser.add_argument('--random_scaling', type=bool, default=False)
@@ -155,12 +156,12 @@ def get_args_dict():
     parser.add_argument('--loss_coef_stop', type=float, default=0)
 
     # Training settings
-    parser.add_argument('--epochs', type=int, default=2)  # 5
-    parser.add_argument('--batch_size', type=int, default=4)
+    parser.add_argument('--epochs', type=int, default=5)  # 5
+    parser.add_argument('--batch_size', type=int, default=4)  # 16
     parser.add_argument('--learning_rate', type=float, default=1e-4)
     parser.add_argument('--max_grad_norm', type=float, default=0.3)
     parser.add_argument('--gradient_accumulation_steps', type=int, default=4)
-    parser.add_argument('--num_workers', type=int, default=4)
+    parser.add_argument('--num_workers', type=int, default=4)  # 16
     parser.add_argument('--logging_steps', type=int, default=10)
 
     # Simulation settings

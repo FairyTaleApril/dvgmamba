@@ -3,13 +3,15 @@ import datetime
 import json
 import os
 import warnings
+
+from blender.render import change_denoiser
+
 warnings.filterwarnings("ignore")
 
 import wandb
 import torch
 from transformers import Trainer, TrainingArguments, set_seed
 
-from blender import render
 from configs.config_blender_simulation import BlenderSimulationConfig
 from configs.config_drone_path_dataset import DronePathDatasetConfig
 from configs.config_dvgmamba import DVGMambaConfig
@@ -39,7 +41,7 @@ def main():
         json.dump(args_dict, f, indent=4)
 
     set_seed(args_dict['seed'])
-    render.default_denoiser = args_dict['default_denoiser']
+    change_denoiser(args_dict['default_denoiser'])
 
     if args_dict['load_checkpoint']:
         checkpoint_path = args_dict['checkpoint_path']
@@ -120,7 +122,7 @@ def get_args_dict():
     # Global settings
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--load_checkpoint', type=bool, default=False)
-    parser.add_argument('--checkpoint_path', type=str, default='logs/Mamba 03-05 23-15')
+    parser.add_argument('--checkpoint_path', type=str, default='logs/Mamba 03-06 10-42')
 
     # BaseConfig settings
     parser.add_argument('--motion_option', type=str, default='local', choices=['local', 'global'])
@@ -128,7 +130,7 @@ def get_args_dict():
     # Dataset settings
     parser.add_argument('--root', type=str, default='/media/jinpeng-yu/Data1/DVG')
     parser.add_argument('--hdf5_fname', type=str, default='dataset_mini.h5')
-    # parser.add_argument('--hdf5_fname', type=str, default='dataset_2k_fpv.h5')
+    # parser.add_argument('--hdf5_fname', type=str, default='dataset_2k.h5')
     # augmentation settings
     parser.add_argument('--random_horizontal_flip', type=bool, default=False)
     parser.add_argument('--random_scaling', type=bool, default=False)
@@ -153,7 +155,7 @@ def get_args_dict():
     parser.add_argument('--loss_coef_stop', type=float, default=0)
 
     # Training settings
-    parser.add_argument('--epochs', type=int, default=5)  # 5
+    parser.add_argument('--epochs', type=int, default=2)  # 5
     parser.add_argument('--batch_size', type=int, default=4)
     parser.add_argument('--learning_rate', type=float, default=1e-4)
     parser.add_argument('--max_grad_norm', type=float, default=0.3)

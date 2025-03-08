@@ -68,6 +68,7 @@ def stdout_redirected(to=os.devnull):
 # default_denoiser = 'OPENIMAGEDENOISE'  # on CPUs, slower but more stable
 default_denoiser = 'OPTIX'  # on RTX GPUs, faster but more likely to cause glitches
 
+
 online_settings = dict(
     resolution=(180, 320),
     num_samples=10,
@@ -139,11 +140,30 @@ base_settings = dict(
 )
 
 
-cycles_settings = {'online': online_settings,
-                   'online_plus': online_plus_settings,
-                   'low': low_settings,
-                   'base': base_settings,
-                   }
+def change_denoiser(denoiser: str):
+    if denoiser not in ['OPENIMAGEDENOISE', 'OPTIX']:
+        raise ValueError(f"Denoiser {denoiser} is not supported.")
+
+    # default_denoiser = 'OPENIMAGEDENOISE'  # on CPUs, slower but more stable
+    # default_denoiser = 'OPTIX'  on RTX GPUs, faster but more likely to cause glitches
+    global default_denoiser
+    default_denoiser = denoiser
+    global online_settings
+    online_settings['denoiser'] = denoiser
+    global online_plus_settings
+    online_plus_settings['denoiser'] = denoiser
+    global low_settings
+    low_settings['denoiser'] = denoiser
+    global base_settings
+    base_settings['denoiser'] = denoiser
+
+
+cycles_settings = {
+    'online': online_settings,
+    'online_plus': online_plus_settings,
+    'low': low_settings,
+    'base': base_settings,
+}
 
 
 def enable_gpu(engine_name='CYCLES'):

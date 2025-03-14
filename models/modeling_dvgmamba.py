@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from functools import cache
 from typing import Optional, Any
 
 import torch
@@ -62,6 +63,7 @@ class DVGMambaModel(nn.Module):
 
         self.see_hidden = None
         self.see_action = None
+        self.count = 0
 
     def forward(
         self,
@@ -120,35 +122,57 @@ class DVGMambaModel(nn.Module):
             states = rearrange(states, 'n d -> 1 1 n d')
             action_preds = torch.zeros([b, l, self.n_action_to_predict, self.action_dim], device=self.device, dtype=self.dtype)
 
-            for i in range(self.n_action_to_predict):
-                all_input_embeddings, _ = self.embedding(
-                    images=images,
-                    states=states,
-                    actions=action_preds[..., :i, :] if i != 0 else None,
-                    cross_pos_ids=cross_pos_ids,
-                    past_input_embeddings=cache['all_input_embeddings'],
-                    see=True
-                )
+            # for i in range(self.n_action_to_predict):
+            #     all_input_embeddings, _ = self.embedding(
+            #         images=images,
+            #         states=states,
+            #         actions=action_preds[..., :i, :] if i != 0 else None,
+            #         past_input_embeddings=cache['all_input_embeddings'],
+            #         see=True
+            #     )
+            #
+            #     hidden_states = self.mamba(
+            #         input_ids=all_input_embeddings,
+            #         inference_params=None
+            #     )
+            #
+            #     action_preds[..., i, :] += self.predict_action(hidden_states[..., -1:, :])
 
+            input_embeddings, _ = self.embedding(
+                images=images,
+                states=states,
+                actions=None,
+            )
+
+            hidden_states = None
+            if cache['all_input_embeddings'] is not None:
                 hidden_states = self.mamba(
-                    input_ids=all_input_embeddings,
-                    inference_params=None
+                    input_ids=cache['all_input_embeddings'][..., -1:, :],
+                    inference_params=cache['inference_params']
                 )
+                cache['inference_params'].seqlen_offset += 1
+            for i in range(input_embeddings.shape[1]):
+                hidden_states = self.mamba(
+                    input_ids=input_embeddings[..., i:i + 1, :],
+                    inference_params=cache['inference_params']
+                )
+                cache['inference_params'].seqlen_offset += 1
 
-                action_preds[..., i, :] += self.predict_action(hidden_states[..., -1:, :])
+            action_preds[..., 0, :] += self.predict_action(hidden_states)
 
             # if True:
-            #     self.see_hidden = see_params(self.see_hidden, hidden_states[..., -self.n_action_to_predict:, :], 'b n d -> b n d')
+            #     # self.see_hidden = see_params(self.see_hidden, hidden_states[..., -self.n_action_to_predict:, :], 'b n d -> b n d')
             #     self.see_action = see_params(self.see_action, action_preds, 'b l n d -> b (l n) d')
-
-            if cache['cross_pos_ids'] >= 28:
-                pass
+            #
+            # if cache['cross_pos_ids'] >= 29:
+            #     self.count += 1
+            #     if self.count == 12:
+            #         pass
 
             all_input_embeddings, _ = self.embedding(
                 images=images,
                 states=states,
                 actions=action_preds,
-                cross_pos_ids=cross_pos_ids,
                 past_input_embeddings=cache['all_input_embeddings'],
                 see=False
             )
@@ -156,7 +180,11 @@ class DVGMambaModel(nn.Module):
             return DVGMambaOutput(
                 loss=None,
                 action_preds=action_preds,
-                cache={'cross_pos_ids': cross_pos_ids, 'all_input_embeddings': all_input_embeddings},
+                cache={
+                    'cross_pos_ids': cross_pos_ids,
+                    'all_input_embeddings': all_input_embeddings,
+                    'inference_params': cache['inference_params'],
+                }
             )
 
     def print_num_parameters(self):

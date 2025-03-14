@@ -5,6 +5,7 @@ import torch
 import torchvision.transforms as T
 import tqdm
 from PIL import Image
+from mamba_ssm.utils.generation import InferenceParams
 
 from blender.blender_camera_env import BlenderCameraEnv
 from configs.config_blender_simulation import BlenderSimulationConfig
@@ -35,7 +36,8 @@ def expand_episode(env, model, run_name, seed, random_init_pose, config: Blender
     model.eval()
     cache = {
         'cross_pos_ids': 0,
-        'all_input_embeddings': None
+        'all_input_embeddings': None,
+        'inference_params': InferenceParams(max_seqlen=config.max_model_frames, max_batch_size=1)
     }
 
     while not done:

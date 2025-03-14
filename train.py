@@ -96,8 +96,6 @@ def main():
 
             report_to='all',
             save_strategy='no',
-            # save_strategy="epoch",
-            # save_total_limit=1,
         )
 
         trainer = Trainer(
@@ -131,7 +129,7 @@ def get_args_dict():
     parser.add_argument('--root', type=str, default='/media/jinpeng-yu/Data1/DVG')
     parser.add_argument('--hdf5_fname', type=str, default='dataset_mini.h5')
     # parser.add_argument('--hdf5_fname', type=str, default='dataset_2k.h5')
-    parser.add_argument('--hdf5_fname', type=str, default='dataset_full.h5')
+    # parser.add_argument('--hdf5_fname', type=str, default='dataset_full.h5')
     # augmentation settings
     parser.add_argument('--random_horizontal_flip', type=bool, default=False)
     parser.add_argument('--random_scaling', type=bool, default=False)

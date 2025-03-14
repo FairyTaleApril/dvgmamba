@@ -16,10 +16,10 @@ Official implementation of our paper:
 ## Installation
 1. **Create and activate a Conda environment**:
     ```sh
-    conda create -n dvg python=3.10
+    conda create -n dvg python=3.10 -y
     conda activate dvg
-    conda install pytorch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 pytorch-cuda=12.1 -c pytorch -c nvidia
-    conda install -c conda-forge ffmpeg
+    conda install pytorch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 pytorch-cuda=12.1 -c pytorch -c nvidia -y
+    conda install -c conda-forge ffmpeg -y
     pip install -r requirements.txt
     ```
 

@@ -117,7 +117,7 @@ class DVGMambaModel(nn.Module):
                 cache=None
             )
         else:
-            b, l, cross_pos_ids = 1, 1, cache['cross_pos_ids']
+            b, l = 1, 1
 
             states = rearrange(states, 'n d -> 1 1 n d')
             action_preds = torch.zeros([b, l, self.n_action_to_predict, self.action_dim], device=self.device, dtype=self.dtype)
@@ -127,6 +127,7 @@ class DVGMambaModel(nn.Module):
             #         images=images,
             #         states=states,
             #         actions=action_preds[..., :i, :] if i != 0 else None,
+            #         cross_pos_ids=cache['cross_pos_ids'],
             #         past_input_embeddings=cache['all_input_embeddings'],
             #         see=True
             #     )
@@ -138,27 +139,32 @@ class DVGMambaModel(nn.Module):
             #
             #     action_preds[..., i, :] += self.predict_action(hidden_states[..., -1:, :])
 
-            input_embeddings, _ = self.embedding(
+            input_embeddings_cache, _ = self.embedding(
                 images=images,
                 states=states,
                 actions=None,
+                cross_pos_ids=cache['cross_pos_ids'],
             )
 
-            hidden_states = None
+            hidden_states_cache = None
+            # hidden_states_list_cache = torch.zeros_like(hidden_states, device=self.device, dtype=self.dtype)
             if cache['all_input_embeddings'] is not None:
-                hidden_states = self.mamba(
+                hidden_states_cache = self.mamba(
                     input_ids=cache['all_input_embeddings'][..., -1:, :],
                     inference_params=cache['inference_params']
                 )
                 cache['inference_params'].seqlen_offset += 1
-            for i in range(input_embeddings.shape[1]):
-                hidden_states = self.mamba(
-                    input_ids=input_embeddings[..., i:i + 1, :],
+            for i in range(input_embeddings_cache.shape[1]):
+                hidden_states_cache = self.mamba(
+                    input_ids=input_embeddings_cache[..., i:i + 1, :],
                     inference_params=cache['inference_params']
                 )
                 cache['inference_params'].seqlen_offset += 1
+                # hidden_states_list_cache[..., i:i + 1, :] += hidden_states_cache
 
-            action_preds[..., 0, :] += self.predict_action(hidden_states)
+            # hidden_states_action_cache = hidden_states_cache
+            action_preds_cache = torch.zeros([b, l, self.n_action_to_predict, self.action_dim], device=self.device, dtype=self.dtype)
+            action_preds_cache[..., 0, :] += self.predict_action(hidden_states_cache)
 
             # if True:
             #     # self.see_hidden = see_params(self.see_hidden, hidden_states[..., -self.n_action_to_predict:, :], 'b n d -> b n d')
@@ -172,16 +178,17 @@ class DVGMambaModel(nn.Module):
             all_input_embeddings, _ = self.embedding(
                 images=images,
                 states=states,
-                actions=action_preds,
+                actions=action_preds_cache,
+                cross_pos_ids=cache['cross_pos_ids'],
                 past_input_embeddings=cache['all_input_embeddings'],
                 see=False
             )
 
             return DVGMambaOutput(
                 loss=None,
-                action_preds=action_preds,
+                action_preds=action_preds_cache,
                 cache={
-                    'cross_pos_ids': cross_pos_ids,
+                    'cross_pos_ids': cache['cross_pos_ids'],
                     'all_input_embeddings': all_input_embeddings,
                     'inference_params': cache['inference_params'],
                 }

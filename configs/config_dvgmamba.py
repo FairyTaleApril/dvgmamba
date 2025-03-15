@@ -83,6 +83,7 @@ class DVGMambaConfig(BaseConfig):
         self.n_token_boa = args_dict.get('n_token_boa', 1)
         # action token
         self.n_token_action = args_dict.get('n_token_action', 1)
+        self.n_token_frame = self.n_token_state + self.n_token_image + self.n_token_boa + self.n_token_boa * self.n_action_to_predict
 
         # loss weight
         self.loss_coef_state = args_dict.get('loss_coef_state', 0)

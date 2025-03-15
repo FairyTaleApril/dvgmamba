@@ -124,6 +124,7 @@ class FrameTokenizer(nn.Module):
         self.n_token_boa = config.n_token_boa
         self.n_token_state = config.n_token_state
         self.n_action_to_predict = config.n_action_to_predict
+        self.n_token_frame = config.n_token_frame
 
         # tokens for each frame
         self.img_embedding = ImageTokenizer(config)
@@ -145,6 +146,9 @@ class FrameTokenizer(nn.Module):
             # nn.LayerNorm(self.hidden_size)
         )
 
+        self.in_frame_pe = nn.Embedding(self.n_token_frame, self.hidden_size)
+        self.cross_frame_pe = nn.Embedding(self.max_model_frames, self.hidden_size)
+
         self.see_boa = None
         self.see_pe = None
         self.see_images = None
@@ -156,6 +160,7 @@ class FrameTokenizer(nn.Module):
         images: torch.Tensor,
         states: Optional[torch.Tensor] = None,
         actions: Optional[torch.Tensor] = None,
+        cross_pos_ids: Optional[int] = None,
         past_input_embeddings: Optional[torch.Tensor] = None,
         see=False
     ):
@@ -175,6 +180,17 @@ class FrameTokenizer(nn.Module):
         assert l <= self.max_model_frames, 'Sequence length exceeds max_seqlen'
         assert images.shape[1] % self.n_token_image != 0
 
+        n_token_frame = ((self.n_token_state if states is not None else 0)
+                         + self.n_token_image
+                         + self.n_token_boa
+                         + (actions.shape[2] if actions is not None else 0))
+        within_frame_pos = torch.arange(n_token_frame, dtype=torch.long, device=device)
+        within_frame_pos = repeat(within_frame_pos, 'n -> b (l n)', b=b, l=l)
+        cross_pos_ids = torch.arange(l, dtype=torch.long, device=device) if cross_pos_ids is None \
+            else torch.tensor([cross_pos_ids], dtype=torch.long, device=device)
+        cross_frame_pos = repeat(cross_pos_ids, 'l -> b (l n)', b=b, n=n_token_frame)
+        frame_pe = self.in_frame_pe(within_frame_pos) + self.cross_frame_pe(cross_frame_pos)
+
         rearranged_images = rearrange(images, "b l c h w -> (b l) c h w")
         image_embeddings = self.img_embedding(rearranged_images)  # (b l) n d
         image_embeddings = rearrange(image_embeddings, "(b l) n d -> b l n d", b=b, l=l)
@@ -187,6 +203,7 @@ class FrameTokenizer(nn.Module):
         valid_embeddings = [embeddings for embeddings in embeddings_to_concat if embeddings is not None]
         input_embeddings = torch.cat(valid_embeddings, dim=2)
         input_embeddings = rearrange(input_embeddings, 'b l n d -> b (l n) d')
+        input_embeddings = input_embeddings + frame_pe
 
         if past_input_embeddings is not None:
             input_embeddings = torch.cat([
@@ -218,5 +235,6 @@ class FrameTokenizer(nn.Module):
             self.see_image_embeddings = see_params(self.see_image_embeddings, image_embeddings, 'b l n d -> b (l n) d')
             self.see_boa = see_params(self.see_boa, boa_embeddings, 'b l 1 d -> b l d')
             self.see_input_embeddings = see_params(self.see_input_embeddings, input_embeddings, 'b n d -> b n d')
+            self.see_pe = see_params(self.see_pe, frame_pe, 'b n d -> b n d')
 
         return input_embeddings, token_types

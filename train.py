@@ -91,8 +91,8 @@ def main():
             logging_steps=args_dict['logging_steps'],
 
             save_safetensors=False,
-            bf16=True,
-            tf32=True,
+            # bf16=True,
+            # tf32=True,
 
             report_to='all',
             save_strategy='no',
@@ -120,7 +120,7 @@ def get_args_dict():
     # Global settings
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--load_checkpoint', type=bool, default=False)
-    parser.add_argument('--checkpoint_path', type=str, default='logs/Mamba 03-06 10-42')
+    parser.add_argument('--checkpoint_path', type=str, default='logs/Mamba 03-15 13-15')
 
     # BaseConfig settings
     parser.add_argument('--motion_option', type=str, default='local', choices=['local', 'global'])
@@ -138,7 +138,8 @@ def get_args_dict():
 
     # Model settings
     parser.add_argument('--device', type=str, default='cuda')
-    parser.add_argument('--dtype', type=str, default='torch.bfloat16')
+    # parser.add_argument('--dtype', type=str, default='torch.bfloat16')
+    parser.add_argument('--dtype', type=str, default='torch.float32')
     parser.add_argument('--n_layer', type=int, default=12)
     parser.add_argument('--use_depth', type=bool, default=True)
     parser.add_argument('--max_model_frames', type=int, default=150)
@@ -164,7 +165,7 @@ def get_args_dict():
 
     # Simulation settings
     parser.add_argument('--do_simulation', type=bool, default=True)
-    parser.add_argument('--num_runs', type=int, default=14)
+    parser.add_argument('--num_runs', type=int, default=1)
     parser.add_argument('--num_repeats', type=int, default=3)
     parser.add_argument('--re_render', type=bool, default=True)
     # 'OPTIX': on RTX GPUs, faster but more likely to cause glitches

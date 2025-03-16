@@ -146,7 +146,7 @@ class FrameTokenizer(nn.Module):
             # nn.LayerNorm(self.hidden_size)
         )
 
-        self.in_frame_pe = nn.Embedding(self.n_token_frame, self.hidden_size)
+        # self.in_frame_pe = nn.Embedding(self.n_token_frame, self.hidden_size)
         self.cross_frame_pe = nn.Embedding(self.max_model_frames, self.hidden_size)
 
         self.see_boa = None
@@ -184,12 +184,13 @@ class FrameTokenizer(nn.Module):
                          + self.n_token_image
                          + self.n_token_boa
                          + (actions.shape[2] if actions is not None else 0))
-        within_frame_pos = torch.arange(n_token_frame, dtype=torch.long, device=device)
-        within_frame_pos = repeat(within_frame_pos, 'n -> b (l n)', b=b, l=l)
+        # within_frame_pos = torch.arange(n_token_frame, dtype=torch.long, device=device)
+        # within_frame_pos = repeat(within_frame_pos, 'n -> b (l n)', b=b, l=l)
         cross_pos_ids = torch.arange(l, dtype=torch.long, device=device) if cross_pos_ids is None \
             else torch.tensor([cross_pos_ids], dtype=torch.long, device=device)
         cross_frame_pos = repeat(cross_pos_ids, 'l -> b (l n)', b=b, n=n_token_frame)
-        frame_pe = self.in_frame_pe(within_frame_pos) + self.cross_frame_pe(cross_frame_pos)
+        # frame_pe = self.in_frame_pe(within_frame_pos) + self.cross_frame_pe(cross_frame_pos)
+        frame_pe = self.cross_frame_pe(cross_frame_pos)
 
         rearranged_images = rearrange(images, "b l c h w -> (b l) c h w")
         image_embeddings = self.img_embedding(rearranged_images)  # (b l) n d

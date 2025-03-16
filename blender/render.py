@@ -65,8 +65,8 @@ def stdout_redirected(to=os.devnull):
 
 # denoiser options
 # https://www.reddit.com/r/blenderhelp/comments/ylifkd/comment/iuz04qk/?utm_source=share&utm_medium=web3x&utm_name=web3xcss&utm_term=1&utm_content=share_button
-# default_denoiser = 'OPENIMAGEDENOISE'  # on CPUs, slower but more stable
-default_denoiser = 'OPTIX'  # on RTX GPUs, faster but more likely to cause glitches
+default_denoiser = 'OPENIMAGEDENOISE'  # on CPUs, slower but more stable
+# default_denoiser = 'OPTIX'  # on RTX GPUs, faster but more likely to cause glitches
 
 
 online_settings = dict(

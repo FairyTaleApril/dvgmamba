@@ -78,12 +78,12 @@ def main():
 
             num_train_epochs=args_dict['epochs'],
             per_device_train_batch_size=args_dict['batch_size'],
-            gradient_accumulation_steps=args_dict['gradient_accumulation_steps'],
+            gradient_accumulation_steps=4,
 
             learning_rate=args_dict['learning_rate'],
             lr_scheduler_type='cosine',
             warmup_ratio=0.03,
-            max_grad_norm=args_dict['max_grad_norm'],
+            max_grad_norm=0.3,
 
             dataloader_num_workers=args_dict['num_workers'],
             dataloader_drop_last=True,
@@ -91,7 +91,7 @@ def main():
 
             save_safetensors=False,
             bf16=True,
-            # tf32=True,
+            tf32=True,
 
             report_to='all',
             save_strategy='no',
@@ -118,57 +118,38 @@ def get_args_dict():
     # Global settings
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--load_checkpoint', type=bool, default=False)
-    parser.add_argument('--checkpoint_path', type=str, default='logs/Mamba 03-16 04-50')
-
-    # BaseConfig settings
-    parser.add_argument('--motion_option', type=str, default='local', choices=['local', 'global'])
+    parser.add_argument('--checkpoint_path', type=str, default='logs/Mamba 03-17 04-01 Standard')
+    # 'OPTIX': on RTX GPUs, faster but more likely to cause glitches
+    # 'OPENIMAGEDENOISE': on CPUs, slower but more stable
+    parser.add_argument('--default_denoiser', type=str, default='OPENIMAGEDENOISE', choices=['OPTIX', 'OPENIMAGEDENOISE'])
 
     # Dataset settings
     parser.add_argument('--root', type=str, default='/media/jinpeng-yu/Data1/DVG')
     # parser.add_argument('--hdf5_fname', type=str, default='dataset_mini.h5')
     # parser.add_argument('--hdf5_fname', type=str, default='dataset_2k.h5')
     parser.add_argument('--hdf5_fname', type=str, default='dataset_full.h5')
-    # augmentation settings
-    parser.add_argument('--random_horizontal_flip', type=bool, default=False)
-    parser.add_argument('--random_scaling', type=bool, default=False)
-    parser.add_argument('--random_temporal_crop', type=bool, default=False)
-    parser.add_argument('--random_color_jitter', type=bool, default=False)
 
     # Model settings
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--dtype', type=str, default='torch.bfloat16')
-    # parser.add_argument('--dtype', type=str, default='torch.float16')
     parser.add_argument('--n_layer', type=int, default=12)
     parser.add_argument('--use_depth', type=bool, default=True)
     parser.add_argument('--max_model_frames', type=int, default=150)
     parser.add_argument('--fix_image_width', type=bool, default=True)
     parser.add_argument('--prediction_option', type=str, default='iterative', choices=['iterative', 'one-shot'])
-    # Token settings
-    parser.add_argument('--n_token_state', type=int, default=1)
-    parser.add_argument('--n_token_boa', type=int, default=1)
-    parser.add_argument('--n_token_action', type=int, default=1)
-    # loss coef settings
-    parser.add_argument('--loss_coef_state', type=float, default=0)
-    parser.add_argument('--loss_coef_action', type=float, default=1)
-    parser.add_argument('--loss_coef_stop', type=float, default=0)
 
     # Training settings
     parser.add_argument('--epochs', type=int, default=5)  # 5
     parser.add_argument('--batch_size', type=int, default=16)  # 16
-    parser.add_argument('--learning_rate', type=float, default=1e-4)
-    parser.add_argument('--max_grad_norm', type=float, default=0.3)
-    parser.add_argument('--gradient_accumulation_steps', type=int, default=4)
     parser.add_argument('--num_workers', type=int, default=16)  # 16
+    parser.add_argument('--learning_rate', type=float, default=1e-4)
     parser.add_argument('--logging_steps', type=int, default=10)
 
     # Simulation settings
     parser.add_argument('--do_simulation', type=bool, default=True)
-    parser.add_argument('--num_runs', type=int, default=1)
-    parser.add_argument('--num_repeats', type=int, default=3)
     parser.add_argument('--re_render', type=bool, default=False)
-    # 'OPTIX': on RTX GPUs, faster but more likely to cause glitches
-    # 'OPENIMAGEDENOISE': on CPUs, slower but more stable
-    parser.add_argument('--default_denoiser', type=str, default='OPENIMAGEDENOISE', choices=['OPTIX', 'OPENIMAGEDENOISE'])
+    parser.add_argument('--num_runs', type=int, default=10)
+    parser.add_argument('--num_repeats', type=int, default=3)
 
     args = parser.parse_args()
     args_dict = vars(args)

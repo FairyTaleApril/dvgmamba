@@ -13,7 +13,7 @@ class DronePathDatasetConfig(BaseConfig):
 
         self.skip_portrait_videos = args_dict.get('skip_portrait_videos', True)
 
-        self.random_horizontal_flip = args_dict.get('random_horizontal_flip', True)
-        self.random_scaling = args_dict.get('random_scaling', True)
-        self.random_temporal_crop = args_dict.get('random_temporal_crop', True)
-        self.random_color_jitter = args_dict.get('random_color_jitter', True)
+        self.random_horizontal_flip = args_dict.get('random_horizontal_flip', False)
+        self.random_scaling = args_dict.get('random_scaling', False)
+        self.random_temporal_crop = args_dict.get('random_temporal_crop', False)
+        self.random_color_jitter = args_dict.get('random_color_jitter', False)

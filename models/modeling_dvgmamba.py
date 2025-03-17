@@ -116,14 +116,12 @@ class DVGMambaModel(nn.Module):
                 cache=None
             )
         else:
-            use_cache = False
-
             b, l = 1, 1
             states = rearrange(states, 'n d -> 1 1 n d')
+            action_preds = torch.zeros([b, l, self.n_action_to_predict, self.action_dim], device=self.device, dtype=self.dtype)
 
+            use_cache = False
             if not use_cache:
-                action_preds = torch.zeros([b, l, self.n_action_to_predict, self.action_dim], device=self.device, dtype=self.dtype)
-
                 for i in range(self.n_action_to_predict):
                     all_input_embeddings, _ = self.embedding(
                         images=images,
@@ -131,7 +129,6 @@ class DVGMambaModel(nn.Module):
                         actions=action_preds[..., :i, :] if i != 0 else None,
                         cross_pos_ids=cache['cross_pos_ids'],
                         past_input_embeddings=cache['all_input_embeddings'],
-                        see=False
                     )
 
                     hidden_states = self.mamba(
@@ -140,28 +137,7 @@ class DVGMambaModel(nn.Module):
                     )
 
                     action_preds[..., i, :] += self.predict_action(hidden_states[..., -1:, :])
-
-                all_input_embeddings, _ = self.embedding(
-                    images=images,
-                    states=states,
-                    actions=action_preds,
-                    cross_pos_ids=cache['cross_pos_ids'],
-                    past_input_embeddings=cache['all_input_embeddings'],
-                    see=False
-                )
-
-                return DVGMambaOutput(
-                    loss=None,
-                    action_preds=action_preds,
-                    cache={
-                        'cross_pos_ids': cache['cross_pos_ids'],
-                        'all_input_embeddings': all_input_embeddings,
-                        'inference_params': cache['inference_params'],
-                    }
-                )
             else:
-                action_preds_cache = torch.zeros([b, l, self.n_action_to_predict, self.action_dim], device=self.device, dtype=self.dtype)
-
                 input_embeddings_cache, _ = self.embedding(
                     images=images,
                     states=states,
@@ -169,48 +145,48 @@ class DVGMambaModel(nn.Module):
                     cross_pos_ids=cache['cross_pos_ids'],
                 )
 
-                hidden_states_cache = None
+                hidden_states = None
                 if cache['all_input_embeddings'] is not None:
-                    hidden_states_cache = self.mamba(
+                    hidden_states = self.mamba(
                         input_ids=cache['all_input_embeddings'][..., -1:, :],
                         inference_params=cache['inference_params']
                     )
                     cache['inference_params'].seqlen_offset += 1
                 for i in range(input_embeddings_cache.shape[1]):
-                    hidden_states_cache = self.mamba(
+                    hidden_states = self.mamba(
                         input_ids=input_embeddings_cache[..., i:i + 1, :],
                         inference_params=cache['inference_params']
                     )
                     cache['inference_params'].seqlen_offset += 1
 
-                action_preds_cache[..., 0, :] += self.predict_action(hidden_states_cache)
+                action_preds[..., 0, :] += self.predict_action(hidden_states)
 
-                # # self.see_hidden = see_params(self.see_hidden, hidden_states[..., -self.n_action_to_predict:, :], 'b n d -> b n d')
-                # self.see_action = see_params(self.see_action, action_preds, 'b l n d -> b (l n) d')
-                #
-                # if cache['cross_pos_ids'] >= 29:
-                #     self.count += 1
-                #     if self.count == 12:
-                #         pass
+            # # self.see_hidden = see_params(self.see_hidden, hidden_states[..., -self.n_action_to_predict:, :], 'b n d -> b n d')
+            # self.see_action = see_params(self.see_action, action_preds, 'b l n d -> b (l n) d')
+            #
+            # if cache['cross_pos_ids'] >= 29:
+            #     self.count += 1
+            #     if self.count == 12:
+            #         pass
 
-                all_input_embeddings, _ = self.embedding(
-                    images=images,
-                    states=states,
-                    actions=action_preds_cache,
-                    cross_pos_ids=cache['cross_pos_ids'],
-                    past_input_embeddings=cache['all_input_embeddings'],
-                    see=False
-                )
+            all_input_embeddings, _ = self.embedding(
+                images=images,
+                states=states,
+                actions=action_preds,
+                cross_pos_ids=cache['cross_pos_ids'],
+                past_input_embeddings=cache['all_input_embeddings'],
+                see=False
+            )
 
-                return DVGMambaOutput(
-                    loss=None,
-                    action_preds=action_preds_cache,
-                    cache={
-                        'cross_pos_ids': cache['cross_pos_ids'],
-                        'all_input_embeddings': all_input_embeddings,
-                        'inference_params': cache['inference_params'],
-                    }
-                )
+            return DVGMambaOutput(
+                loss=None,
+                action_preds=action_preds,
+                cache={
+                    'cross_pos_ids': cache['cross_pos_ids'],
+                    'all_input_embeddings': all_input_embeddings,
+                    'inference_params': cache['inference_params'],
+                }
+            )
 
     def print_num_parameters(self):
         total_params = sum(p.numel() for p in self.parameters())

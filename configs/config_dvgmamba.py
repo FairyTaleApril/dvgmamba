@@ -88,4 +88,3 @@ class DVGMambaConfig(BaseConfig):
         # loss weight
         self.loss_coef_state = args_dict.get('loss_coef_state', 0)
         self.loss_coef_action = args_dict.get('loss_coef_action', 1)
-        self.loss_coef_stop = args_dict.get('loss_coef_stop', 0)

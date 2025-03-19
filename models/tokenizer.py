@@ -119,12 +119,11 @@ class FrameTokenizer(nn.Module):
         self.action_dim = config.action_dim
 
         self.max_model_frames = config.max_model_frames
-        # self.n_token_frame = config.n_token_frame
+        self.n_token_frame = config.n_token_frame
         self.n_token_image = config.n_token_image
         self.n_token_boa = config.n_token_boa
         self.n_token_state = config.n_token_state
         self.n_action_to_predict = config.n_action_to_predict
-        self.n_token_frame = config.n_token_frame
 
         # tokens for each frame
         self.img_embedding = ImageTokenizer(config)

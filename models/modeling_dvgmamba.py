@@ -62,7 +62,6 @@ class DVGMambaModel(nn.Module):
 
         self.see_hidden = None
         self.see_action = None
-        self.count = 0
 
     def forward(
         self,
@@ -117,10 +116,11 @@ class DVGMambaModel(nn.Module):
             )
         else:
             b, l = 1, 1
+
             states = rearrange(states, 'n d -> 1 1 n d')
             action_preds = torch.zeros([b, l, self.n_action_to_predict, self.action_dim], device=self.device, dtype=self.dtype)
 
-            use_cache = False
+            use_cache = True
             if not use_cache:
                 for i in range(self.n_action_to_predict):
                     all_input_embeddings, _ = self.embedding(
@@ -175,7 +175,6 @@ class DVGMambaModel(nn.Module):
                 actions=action_preds,
                 cross_pos_ids=cache['cross_pos_ids'],
                 past_input_embeddings=cache['all_input_embeddings'],
-                see=False
             )
 
             return DVGMambaOutput(

@@ -13,8 +13,8 @@ from data.state_action_conversion import action_avg, action_std, state_avg, stat
 from models.modeling_dvgmamba import DVGMambaModel
 from utils.quaternion_operations import convert_to_local_frame
 
-infinigen_root = '/media/jinpeng-yu/Data1/DVG/infinigen'
-blosm_root = '/media/jinpeng-yu/Data1/DVG/blosm'
+infinigen_root = '/workspace/DVG/infinigen'
+blosm_root = '/workspace/DVG/blosm'
 
 
 def expand_episode(env, model, run_name, seed, random_init_pose, config: BlenderSimulationConfig):

@@ -13,13 +13,13 @@ logger = logging.getLogger(__name__)
 # https://blender.stackexchange.com/a/270201
 @contextmanager
 def stdout_redirected(to=os.devnull):
-    '''
+    """
     import os
 
     with stdout_redirected(to=filename):
         print("from Python")
         os.system("echo non-Python applications are also supported")
-    '''
+    """
     fd = sys.stdout.fileno()
 
     # assert that Python and C stdio write using the same file descriptor
@@ -63,11 +63,11 @@ def stdout_redirected(to=os.devnull):
 # Min = 12mm
 # Max = 39mm
 
+
 # denoiser options
 # https://www.reddit.com/r/blenderhelp/comments/ylifkd/comment/iuz04qk/?utm_source=share&utm_medium=web3x&utm_name=web3xcss&utm_term=1&utm_content=share_button
 default_denoiser = 'OPENIMAGEDENOISE'  # on CPUs, slower but more stable
 # default_denoiser = 'OPTIX'  # on RTX GPUs, faster but more likely to cause glitches
-
 
 online_settings = dict(
     resolution=(180, 320),
@@ -103,7 +103,6 @@ online_plus_settings = dict(
     motion_blur_shutter=0.15
 )
 
-
 low_settings = dict(
     resolution=(1080, 1920),
     num_samples=512,
@@ -120,7 +119,6 @@ low_settings = dict(
     motion_blur=True,
     motion_blur_shutter=0.15
 )
-
 
 base_settings = dict(
     resolution=(1080, 1920),
@@ -139,6 +137,13 @@ base_settings = dict(
     motion_blur_shutter=0.15
 )
 
+cycles_settings = {
+    'online': online_settings,
+    'online_plus': online_plus_settings,
+    'low': low_settings,
+    'base': base_settings,
+}
+
 
 def change_denoiser(denoiser: str):
     if denoiser not in ['OPENIMAGEDENOISE', 'OPTIX']:
@@ -156,14 +161,6 @@ def change_denoiser(denoiser: str):
     low_settings['denoiser'] = denoiser
     global base_settings
     base_settings['denoiser'] = denoiser
-
-
-cycles_settings = {
-    'online': online_settings,
-    'online_plus': online_plus_settings,
-    'low': low_settings,
-    'base': base_settings,
-}
 
 
 def enable_gpu(engine_name='CYCLES'):

@@ -25,13 +25,14 @@ def main():
     os.makedirs(logdir, exist_ok=True)
     print(logdir)
 
-    code_fpath = ["blender/*.py", "configs/*.py", "data/*.py", "models/*.py", "utils/*.py", "blender_simulation_mamba.py", "train.py"]
     wandb.init(
         project='dvgmamba',
         name=run_name,
         mode='offline',
-        dir=logdir
+        dir=logdir,
     )
+    code_fpath = ["blender/*.py", "configs/*.py", "data/*.py", "models/*.py", "utils/*.py",
+                  "blender_simulation_mamba.py", "train.py"]
     for fpath in code_fpath:
         wandb.save(fpath)
 
@@ -118,13 +119,13 @@ def get_args_dict():
     # Global settings
     parser.add_argument('--seed', type=int, default=42)
     parser.add_argument('--load_checkpoint', type=bool, default=False)
-    parser.add_argument('--checkpoint_path', type=str, default='logs/Mamba 03-17 04-01 Standard')
+    parser.add_argument('--checkpoint_path', type=str, default='logs/Mamba 03-18 06-59')
     # 'OPTIX': on RTX GPUs, faster but more likely to cause glitches
     # 'OPENIMAGEDENOISE': on CPUs, slower but more stable
     parser.add_argument('--default_denoiser', type=str, default='OPENIMAGEDENOISE', choices=['OPTIX', 'OPENIMAGEDENOISE'])
 
     # Dataset settings
-    parser.add_argument('--root', type=str, default='/media/jinpeng-yu/Data1/DVG')
+    parser.add_argument('--root', type=str, default='/workspace/DVG')
     # parser.add_argument('--hdf5_fname', type=str, default='dataset_mini.h5')
     # parser.add_argument('--hdf5_fname', type=str, default='dataset_2k.h5')
     parser.add_argument('--hdf5_fname', type=str, default='dataset_full.h5')
@@ -148,8 +149,8 @@ def get_args_dict():
     # Simulation settings
     parser.add_argument('--do_simulation', type=bool, default=True)
     parser.add_argument('--re_render', type=bool, default=False)
-    parser.add_argument('--num_runs', type=int, default=10)
-    parser.add_argument('--num_repeats', type=int, default=3)
+    parser.add_argument('--num_runs', type=int, default=2)
+    parser.add_argument('--num_repeats', type=int, default=2)
 
     args = parser.parse_args()
     args_dict = vars(args)

@@ -75,14 +75,10 @@ class DVGMambaConfig(BaseConfig):
             ))
 
         # tokens for describing one frame
-        # image token
-        self.n_token_image = int(np.prod(self.image_featmap_shape))
-        # state token
-        self.n_token_state = args_dict.get('n_token_state', 1)
-        # begin of action token
-        self.n_token_boa = args_dict.get('n_token_boa', 1)
-        # action token
-        self.n_token_action = args_dict.get('n_token_action', 1)
+        self.n_token_image = int(np.prod(self.image_featmap_shape))  # image token
+        self.n_token_state = args_dict.get('n_token_state', 1)  # state token
+        self.n_token_boa = args_dict.get('n_token_boa', 1)  # begin of action token
+        self.n_token_action = args_dict.get('n_token_action', 1)  # action token
         self.n_token_frame = self.n_token_state + self.n_token_image + self.n_token_boa + self.n_token_boa * self.n_action_to_predict
 
         # loss weight

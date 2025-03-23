@@ -106,12 +106,10 @@ def blender_simulation(model, logdir, config: BlenderSimulationConfig):
     scene_fpaths = []
     for scene in blosm_fpaths:
         scene_fpaths.extend(blosm_fpaths[scene])
-
     for i in range(int(np.ceil((config.num_runs - len(blosm_fpaths)) / len(infinigen_fpaths)))):
         for scene in infinigen_fpaths:
             if i < len(infinigen_fpaths[scene]):
                 scene_fpaths.append(infinigen_fpaths[scene][i])
-    
     num_repeats = np.ones(len(scene_fpaths), dtype=int)
     num_repeats[:len(blosm_fpaths)] = config.num_repeats
 

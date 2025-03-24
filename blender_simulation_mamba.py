@@ -110,9 +110,8 @@ def blender_simulation(model, logdir, config: BlenderSimulationConfig):
         for scene in infinigen_fpaths:
             if i < len(infinigen_fpaths[scene]):
                 scene_fpaths.append(infinigen_fpaths[scene][i])
-    num_repeats = np.ones(len(scene_fpaths), dtype=int)
-    num_repeats[:len(blosm_fpaths)] = config.num_repeats
-
+    num_repeats = np.ones(len(scene_fpaths), dtype=int) * config.num_repeats
+    
     results = []
     for i in tqdm.tqdm(range(min(config.num_runs, len(scene_fpaths)))):
         scene_fpath = scene_fpaths[i]

@@ -119,7 +119,7 @@ class FrameTokenizer(nn.Module):
         self.action_dim = config.action_dim
 
         self.max_model_frames = config.max_model_frames
-        # self.n_token_frame = config.n_token_frame
+        self.n_token_frame = config.n_token_frame
         self.n_token_image = config.n_token_image
         self.n_token_boa = config.n_token_boa
         self.n_token_state = config.n_token_state
@@ -145,16 +145,10 @@ class FrameTokenizer(nn.Module):
             # nn.LayerNorm(self.hidden_size)
         )
 
-        # # within-frame positional embedding
-        # self.in_frame_pe = nn.Embedding(50, self.hidden_size)
+        # within-frame positional embedding
+        self.in_frame_pe = nn.Embedding(self.n_token_frame, self.hidden_size)
         # cross-frame positional embeddings
         self.cross_frame_pe = nn.Embedding(self.max_model_frames, self.hidden_size)
-
-        self.see_boa = None
-        self.see_pe = None
-        self.see_images = None
-        self.see_image_embeddings = None
-        self.see_input_embeddings = None
 
     def __call__(
         self,
@@ -186,9 +180,10 @@ class FrameTokenizer(nn.Module):
                          + self.n_token_boa
                          + (actions.shape[2] if actions is not None else 0))
 
-        # # within-frame positional embeddings
+        # within-frame positional embeddings
         # within_frame_pos = torch.arange(n_token_frame, dtype=torch.long, device=device)
         # within_frame_pos = repeat(within_frame_pos, 'n -> b (l n)', b=b, l=l)
+        # frame_pe = self.in_frame_pe(within_frame_pos)
         # cross-frame positional embeddings
         cross_pos_ids = torch.arange(l, dtype=torch.long, device=device) if cross_pos_ids is None \
             else torch.tensor([cross_pos_ids], dtype=torch.long, device=device)
@@ -206,8 +201,7 @@ class FrameTokenizer(nn.Module):
 
         embeddings_to_concat = [state_embeddings, image_embeddings, boa_embeddings, action_embeddings]
         valid_embeddings = [embeddings for embeddings in embeddings_to_concat if embeddings is not None]
-        input_embeddings = torch.cat(valid_embeddings, dim=2)
-        input_embeddings = rearrange(input_embeddings, 'b l n d -> b (l n) d')
+        input_embeddings = rearrange(torch.cat(valid_embeddings, dim=2), 'b l n d -> b (l n) d')
         input_embeddings = input_embeddings + frame_pe
 
         if past_input_embeddings is not None:
@@ -234,12 +228,5 @@ class FrameTokenizer(nn.Module):
             tokens_to_concat = tokens_to_concat + action_tokens
         token_types = torch.cat(tokens_to_concat, dim=2)
         token_types = rearrange(token_types, 'b l n -> b (l n)')
-
-        if see:
-            self.see_images = see_params(self.see_images, images, 'b l c h w -> b l (c h w)')
-            self.see_image_embeddings = see_params(self.see_image_embeddings, image_embeddings, 'b l n d -> b (l n) d')
-            self.see_boa = see_params(self.see_boa, boa_embeddings, 'b l 1 d -> b l d')
-            self.see_input_embeddings = see_params(self.see_input_embeddings, input_embeddings, 'b n d -> b n d')
-            self.see_pe = see_params(self.see_pe, frame_pe, 'b n d -> b n d')
 
         return input_embeddings, token_types

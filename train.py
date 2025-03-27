@@ -133,8 +133,8 @@ def get_args_dict():
     # Model settings
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--dtype', type=str, default='torch.bfloat16')
-    parser.add_argument('--n_layer', type=int, default=12)
-    parser.add_argument('--use_depth', type=bool, default=True)
+    parser.add_argument('--n_layer', type=int, default=22)
+    parser.add_argument('--use_depth', type=bool, default=False)
     parser.add_argument('--max_model_frames', type=int, default=150)
     parser.add_argument('--fix_image_width', type=bool, default=True)
     parser.add_argument('--prediction_option', type=str, default='iterative', choices=['iterative', 'one-shot'])
@@ -147,10 +147,10 @@ def get_args_dict():
     parser.add_argument('--logging_steps', type=int, default=10)
 
     # Simulation settings
-    parser.add_argument('--do_simulation', type=bool, default=True)
+    parser.add_argument('--do_simulation', type=bool, default=False)
     parser.add_argument('--re_render', type=bool, default=False)
-    parser.add_argument('--num_runs', type=int, default=2)
-    parser.add_argument('--num_repeats', type=int, default=2)
+    parser.add_argument('--num_runs', type=int, default=17)
+    parser.add_argument('--num_repeats', type=int, default=3)
 
     args = parser.parse_args()
     args_dict = vars(args)

@@ -134,13 +134,13 @@ def get_args_dict():
     parser.add_argument('--device', type=str, default='cuda')
     parser.add_argument('--dtype', type=str, default='torch.bfloat16')
     parser.add_argument('--n_layer', type=int, default=22)
-    parser.add_argument('--use_depth', type=bool, default=False)
+    parser.add_argument('--use_depth', type=bool, default=True)
     parser.add_argument('--max_model_frames', type=int, default=150)
     parser.add_argument('--fix_image_width', type=bool, default=True)
     parser.add_argument('--prediction_option', type=str, default='iterative', choices=['iterative', 'one-shot'])
 
     # Training settings
-    parser.add_argument('--epochs', type=int, default=5)  # 5
+    parser.add_argument('--epochs', type=int, default=3)  # 5
     parser.add_argument('--batch_size', type=int, default=16)  # 16
     parser.add_argument('--num_workers', type=int, default=16)  # 16
     parser.add_argument('--learning_rate', type=float, default=1e-4)

@@ -145,9 +145,7 @@ class FrameTokenizer(nn.Module):
             # nn.LayerNorm(self.hidden_size)
         )
 
-        # within-frame positional embedding
-        self.in_frame_pe = nn.Embedding(self.n_token_frame, self.hidden_size)
-        # cross-frame positional embeddings
+        # self.in_frame_pe = nn.Embedding(self.n_token_frame, self.hidden_size)
         self.cross_frame_pe = nn.Embedding(self.max_model_frames, self.hidden_size)
 
     def __call__(
@@ -201,7 +199,8 @@ class FrameTokenizer(nn.Module):
 
         embeddings_to_concat = [state_embeddings, image_embeddings, boa_embeddings, action_embeddings]
         valid_embeddings = [embeddings for embeddings in embeddings_to_concat if embeddings is not None]
-        input_embeddings = rearrange(torch.cat(valid_embeddings, dim=2), 'b l n d -> b (l n) d')
+        input_embeddings = torch.cat(valid_embeddings, dim=2)
+        input_embeddings = rearrange(input_embeddings, 'b l n d -> b (l n) d')
         input_embeddings = input_embeddings + frame_pe
 
         if past_input_embeddings is not None:

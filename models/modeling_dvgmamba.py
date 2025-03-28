@@ -32,7 +32,6 @@ class DVGMambaModel(nn.Module):
 
         super().__init__()
 
-        # self.config = config
         self.device = config.device
         self.dtype = config.dtype
 
@@ -93,6 +92,7 @@ class DVGMambaModel(nn.Module):
 
             hidden_states = self.mamba(
                 input_ids=input_embeddings,
+                inference_params=None
             )
 
             pred_action_pos = (token_types == 2) | (token_types == 3)
@@ -100,7 +100,8 @@ class DVGMambaModel(nn.Module):
             action_preds = action_preds.view([b, l, -1, self.action_dim])
 
             mask = torch.arange(l, device=self.device).unsqueeze(0) < seq_length.to(device=self.device, dtype=self.dtype).unsqueeze(1)  # [b, l]
-            loss_action = F.l1_loss(action_preds, action_labels.to(device=self.device, dtype=self.dtype), reduction='none').mean(dim=[2, 3])  # [b, l]
+            loss_action = F.l1_loss(action_preds, action_labels.to(device=self.device, dtype=self.dtype), reduction='none')
+            loss_action = loss_action.mean(dim=[2, 3])  # [b, l]
             loss_action = (loss_action * mask.float()).sum(dim=1) / mask.sum(dim=1).clamp(min=1)
             loss = (loss_action * self.loss_coef_action).mean()
 
@@ -116,27 +117,46 @@ class DVGMambaModel(nn.Module):
             states = rearrange(states, 'n d -> 1 1 n d')
             action_preds = torch.zeros([b, l, self.n_action_to_predict, self.action_dim], device=self.device, dtype=self.dtype)
 
-            input_embeddings_cache, _ = self.embedding(
-                images=images,
-                states=states,
-                cross_pos_ids=cross_pos_ids,
-            )
+            use_cache = True
+            if not use_cache:
+                for i in range(self.n_action_to_predict):
+                    all_input_embeddings, _ = self.embedding(
+                        images=images,
+                        states=states,
+                        actions=action_preds[..., :i, :] if i != 0 else None,
+                        cross_pos_ids=cross_pos_ids,
+                        past_input_embeddings=cache['all_input_embeddings'],
+                    )
 
-            hidden_states = None
-            if cache['all_input_embeddings'] is not None:
-                hidden_states = self.mamba(
-                    input_ids=cache['all_input_embeddings'][..., -1:, :],
-                    inference_params=inference_params
-                )
-                inference_params.seqlen_offset += 1
-            for i in range(input_embeddings_cache.shape[1]):
-                hidden_states = self.mamba(
-                    input_ids=input_embeddings_cache[..., i:i + 1, :],
-                    inference_params=inference_params
-                )
-                inference_params.seqlen_offset += 1
+                    hidden_states = self.mamba(
+                        input_ids=all_input_embeddings,
+                        inference_params=None
+                    )
 
-            action_preds[..., 0, :] += self.predict_action(hidden_states)
+                    action_preds[..., i, :] += self.predict_action(hidden_states[..., -1:, :])
+            else:
+                input_embeddings_cache, _ = self.embedding(
+                    images=images,
+                    states=states,
+                    actions=None,
+                    cross_pos_ids=cross_pos_ids,
+                )
+
+                hidden_states = None
+                if cache['all_input_embeddings'] is not None:
+                    hidden_states = self.mamba(
+                        input_ids=cache['all_input_embeddings'][..., -1:, :],
+                        inference_params=inference_params
+                    )
+                    inference_params.seqlen_offset += 1
+                for i in range(input_embeddings_cache.shape[1]):
+                    hidden_states = self.mamba(
+                        input_ids=input_embeddings_cache[..., i:i + 1, :],
+                        inference_params=inference_params
+                    )
+                    inference_params.seqlen_offset += 1
+
+                action_preds[..., 0, :] += self.predict_action(hidden_states)
 
             all_input_embeddings, _ = self.embedding(
                 images=images,

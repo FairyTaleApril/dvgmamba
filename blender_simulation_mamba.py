@@ -110,7 +110,6 @@ def blender_simulation(model, logdir, config: BlenderSimulationConfig):
         for scene in infinigen_fpaths:
             if i < len(infinigen_fpaths[scene]):
                 scene_fpaths.append(infinigen_fpaths[scene][i])
-    
     num_repeats = np.ones(len(scene_fpaths), dtype=int) * config.num_repeats
     
     results = []

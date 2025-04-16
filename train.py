@@ -140,14 +140,14 @@ def get_args_dict():
     parser.add_argument('--prediction_option', type=str, default='iterative', choices=['iterative', 'one-shot'])
 
     # Training settings
-    parser.add_argument('--epochs', type=int, default=3)  # 5
+    parser.add_argument('--epochs', type=int, default=5)  # 5
     parser.add_argument('--batch_size', type=int, default=16)  # 16
     parser.add_argument('--num_workers', type=int, default=16)  # 16
     parser.add_argument('--learning_rate', type=float, default=1e-4)
     parser.add_argument('--logging_steps', type=int, default=10)
 
     # Simulation settings
-    parser.add_argument('--do_simulation', type=bool, default=False)
+    parser.add_argument('--do_simulation', type=bool, default=True)
     parser.add_argument('--re_render', type=bool, default=False)
     parser.add_argument('--num_runs', type=int, default=17)
     parser.add_argument('--num_repeats', type=int, default=3)

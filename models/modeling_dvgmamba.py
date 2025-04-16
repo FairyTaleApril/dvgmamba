@@ -9,7 +9,7 @@ from mamba_ssm.models.mixer_seq_simple import MixerModel
 from transformers.utils import ModelOutput
 
 from configs.config_dvgmamba import DVGMambaConfig
-from models.tokenizer import FrameTokenizer
+from models.tokenizer import FrameTokenizer, see_params
 
 
 @dataclass
@@ -32,6 +32,7 @@ class DVGMambaModel(nn.Module):
 
         super().__init__()
 
+        # self.config = config
         self.device = config.device
         self.dtype = config.dtype
 
@@ -58,6 +59,9 @@ class DVGMambaModel(nn.Module):
         self.mamba.embedding = nn.Identity()
 
         self.predict_action = nn.Linear(self.hidden_size, self.action_dim)
+
+        self.see_hidden = None
+        self.see_action = None
 
     def forward(
         self,
@@ -157,6 +161,14 @@ class DVGMambaModel(nn.Module):
                     inference_params.seqlen_offset += 1
 
                 action_preds[..., 0, :] += self.predict_action(hidden_states)
+
+            # # self.see_hidden = see_params(self.see_hidden, hidden_states[..., -self.n_action_to_predict:, :], 'b n d -> b n d')
+            # self.see_action = see_params(self.see_action, action_preds, 'b l n d -> b (l n) d')
+            #
+            # if cross_pos_ids >= 29:
+            #     self.count += 1
+            #     if self.count == 12:
+            #         pass
 
             all_input_embeddings, _ = self.embedding(
                 images=images,

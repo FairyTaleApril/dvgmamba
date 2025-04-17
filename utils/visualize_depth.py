@@ -41,7 +41,7 @@ def crop_image(image_fname):
     img = Image.open(image_fname)
 
     w, h = img.size
-    crop_w, crop_h = 390, 260
+    crop_w, crop_h = 336, 224
 
     left = (w - crop_w) // 2
     right = left + crop_w

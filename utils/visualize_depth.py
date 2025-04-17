@@ -1,3 +1,5 @@
+import os
+
 import torch
 from PIL import Image
 import matplotlib.pyplot as plt
@@ -50,9 +52,30 @@ def crop_image(image_fname):
     cropped_img.save(f'cropped {image_fname}')
 
 
+def crop_tiles(image_fname):
+    output_dir = 'tiles ' + image_fname.split('.')[0]
+    os.makedirs(output_dir, exist_ok=True)
+
+    img = Image.open(image_fname)
+    w, h = img.size
+    rows, cols = 2, 3
+
+    tile_w = w // cols
+    tile_h = h // rows
+
+    for row in range(rows):
+        for col in range(cols):
+            left = col * tile_w
+            upper = row * tile_h
+            right = left + tile_w
+            lower = upper + tile_h
+
+            tile = img.crop((left, upper, right, lower))
+            tile.save(os.path.join(output_dir, f"tile_{row}_{col}.png"))
+
+
 if __name__ == "__main__":
     # visualize_depth('1.png')
     # reshape_image('depth 1.png')
-    crop_image('1.png')
-
-
+    # crop_image('1.png')
+    crop_tiles('cropped 1.png')

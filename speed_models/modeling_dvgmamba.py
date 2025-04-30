@@ -9,7 +9,7 @@ from mamba_ssm.models.mixer_seq_simple import MixerModel
 from transformers.utils import ModelOutput
 
 from configs.config_dvgmamba import DVGMambaConfig
-from models.tokenizer import FrameTokenizer, see_params
+from speed_models.tokenizer import FrameTokenizer, see_params
 
 
 @dataclass
@@ -124,26 +124,38 @@ class DVGMambaModel(nn.Module):
             action_preds = torch.zeros([b, l, self.n_action_to_predict, self.action_dim], device=self.device,
                                        dtype=self.dtype)
 
-            for i in range(self.n_action_to_predict):
-                all_input_embeddings, _ = self.embedding(
-                    images=images,
-                    states=states,
-                    cross_pos_ids=cross_pos_ids,
-                )
+            all_input_embeddings, _ = self.embedding(
+                images=images,
+                states=states,
+                actions=actions,
+                cross_pos_ids=cross_pos_ids,
+                past_input_embeddings=cache['all_input_embeddings'],
+            )
 
-                hidden_states = self.mamba(
-                    input_ids=all_input_embeddings,
-                    inference_params=None
-                )
+            hidden_states = self.mamba(
+                input_ids=all_input_embeddings,
+                inference_params=None
+            )
 
-                action_preds[..., i, :] += self.predict_action(hidden_states[..., -1:, :])
+            action_preds[..., 0, :] += self.predict_action(hidden_states[..., -1:, :])
+
+            return DVGMambaOutput(
+                loss=None,
+                action_preds=action_preds,
+                cache={
+                    'cross_pos_ids': cross_pos_ids,
+                    'all_input_embeddings': all_input_embeddings,
+                    'inference_params': None,
+                }
+            )
 
             # input_embeddings_cache, _ = self.embedding(
             #     images=images,
             #     states=states,
+            #     actions=actions,
             #     cross_pos_ids=cross_pos_ids,
             # )
-            # 
+            #
             # hidden_states = None
             # for i in range(input_embeddings_cache.shape[1]):
             #     hidden_states = self.mamba(
@@ -151,18 +163,18 @@ class DVGMambaModel(nn.Module):
             #         inference_params=inference_params
             #     )
             #     inference_params.seqlen_offset += 1
-            # 
+            #
             # action_preds[..., 0, :] += self.predict_action(hidden_states)
-
-            return DVGMambaOutput(
-                loss=None,
-                action_preds=None,
-                cache={
-                    'cross_pos_ids': None,
-                    'all_input_embeddings': None,
-                    'inference_params': None,
-                }
-            )
+            #
+            # return DVGMambaOutput(
+            #     loss=None,
+            #     action_preds=action_preds,
+            #     cache={
+            #         'cross_pos_ids': cross_pos_ids,
+            #         'all_input_embeddings': None,
+            #         'inference_params': inference_params,
+            #     }
+            # )
 
     def print_num_parameters(self):
         total_params = sum(p.numel() for p in self.parameters())

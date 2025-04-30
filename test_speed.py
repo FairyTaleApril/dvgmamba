@@ -1,4 +1,7 @@
 import warnings
+
+import psutil
+
 warnings.filterwarnings("ignore")
 
 import argparse
@@ -25,7 +28,6 @@ def main():
 
     args_dict = get_args_dict()
     set_seed(args_dict['seed'])
-    num_runs = args_dict['num_runs']
     device =args_dict['device']
 
     drone_path_dataset_config = DronePathDatasetConfig(args_dict=args_dict)
@@ -36,37 +38,54 @@ def main():
     model.eval()
     model.print_num_parameters()
 
-    batch_size, seq_length = 1, 1
-    images = torch.randn([batch_size, seq_length, 3, dataset.resolution[0], dataset.resolution[1]], device=device)
-    states = torch.randn([seq_length, dvgmamba_config.state_dim], device=device)
-    cache = {
-        'cross_pos_ids': 0,
-        'all_input_embeddings': None,
-        'inference_params': None
-        # 'inference_params': InferenceParams(max_seqlen=dvgmamba_config.max_model_frames, max_batch_size=1)
-    }
+    batch_size, seq_length, num_runs = 1, 1, 10
+    images = torch.zeros([batch_size, seq_length, 3, dataset.resolution[0], dataset.resolution[1]], device=device)
+    states = torch.zeros([seq_length, dvgmamba_config.state_dim], device=device)
+    actions = torch.zeros([batch_size, seq_length, 1, dvgmamba_config.action_dim], device=device)
 
-    # t0 = time.time()
-    # for repeat in tqdm(range(num_runs)):
-    #     with torch.no_grad():
-    #         model.forward(images=images, states=states, cache=cache, test_speed=True)
-    # 
-    # t1 = time.time()
-    # print(f'inference num: {num_runs}, time: {t1 - t0}')
-    # print(f'inference speed: {num_runs / (t1 - t0)}')
+    torch.cuda.empty_cache()
+    torch.cuda.reset_peak_memory_stats()
+    process = psutil.Process()
+
+    t0 = time.time()
+    gpu_memory_peak = 0
+    cpu_memory_peak = 0
+    for repeat in tqdm(range(num_runs)):
+        cache = {
+            'cross_pos_ids': 0,
+            'all_input_embeddings': None,
+            'inference_params': None
+            # 'inference_params': InferenceParams(max_seqlen=dvgmamba_config.max_model_frames, max_batch_size=1)
+        }
+
+        for i in range(30):
+            with torch.no_grad():
+                out = model(images=images, states=states, actions=actions, cache=cache, test_speed=True)
+
+            cache = out.cache
+            cache['cross_pos_ids'] += 1
+            gpu_memory_peak = max(gpu_memory_peak, torch.cuda.max_memory_allocated())
+            cpu_memory_peak = max(cpu_memory_peak, process.memory_info().rss)
+
+    t1 = time.time()
+    print(f'inference num: {num_runs}, time: {t1 - t0}')
+    print(f'inference speed: {num_runs / (t1 - t0)}')
+    print(f"Max GPU memory allocated : {gpu_memory_peak / (1024**2):.2f} MB")
+    print(f"Max GPU memory reserved  : {torch.cuda.max_memory_reserved() / (1024**2):.2f} MB")
+    print(f"Max CPU memory usage     : {cpu_memory_peak / (1024**2):.2f} MB")
     
-    with torch.profiler.profile(
-        activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
-        record_shapes=True,
-        profile_memory=True,
-        with_flops=True,
-    ) as prof:
-        with torch.no_grad():
-            model(images=images, states=states, cache=cache, test_speed=True)
-            
-    print(prof.key_averages().table(sort_by="flops", row_limit=10))
-    total_flops = sum([item.flops for item in prof.key_averages()])
-    print(f"Total FLOPs: {total_flops / 1e9:.2f} GFLOPs")
+    # with torch.profiler.profile(
+    #     activities=[torch.profiler.ProfilerActivity.CPU, torch.profiler.ProfilerActivity.CUDA],
+    #     record_shapes=True,
+    #     profile_memory=True,
+    #     with_flops=True,
+    # ) as prof:
+    #     with torch.no_grad():
+    #         model(images=images, states=states, cache=cache, test_speed=True)
+    #
+    # print(prof.key_averages().table(sort_by="flops", row_limit=10))
+    # total_flops = sum([item.flops for item in prof.key_averages()])
+    # print(f"Total FLOPs: {total_flops / 1e9:.2f} GFLOPs")
 
 
 def get_args_dict():
@@ -81,7 +100,7 @@ def get_args_dict():
     parser.add_argument('--default_denoiser', type=str, default='OPENIMAGEDENOISE', choices=['OPTIX', 'OPENIMAGEDENOISE'])
 
     # Dataset settings
-    parser.add_argument('--root', type=str, default='/workspace/DVG')
+    parser.add_argument('--root', type=str, default='/media/jinpeng-yu/Data1/DVG')
     # parser.add_argument('--hdf5_fname', type=str, default='dataset_mini.h5')
     # parser.add_argument('--hdf5_fname', type=str, default='dataset_2k.h5')
     parser.add_argument('--hdf5_fname', type=str, default='dataset_mini.h5')
@@ -95,7 +114,7 @@ def get_args_dict():
     parser.add_argument('--fix_image_width', type=bool, default=True)
     parser.add_argument('--prediction_option', type=str, default='iterative', choices=['iterative', 'one-shot'])
 
-    parser.add_argument('--num_runs', type=int, default=1000)
+    parser.add_argument('--num_runs', type=int, default=10)
 
     args = parser.parse_args()
     args_dict = vars(args)

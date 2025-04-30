@@ -203,8 +203,18 @@ class FrameTokenizer(nn.Module):
         state_embeddings = self.state_embedding(states.to(device=self.device, dtype=self.dtype)) if states is not None else None
         boa_embeddings = repeat(self.boa_embedding, 'd -> b l n d', b=b, l=l, n=self.n_token_boa)
 
-        input_embeddings = torch.cat([state_embeddings, image_embeddings, boa_embeddings], dim=2)
+        if actions is not None:
+            action_embeddings = self.action_embedding(actions.to(device=self.device, dtype=self.dtype))
+            input_embeddings = torch.cat([action_embeddings, state_embeddings, image_embeddings, boa_embeddings], dim=2)
+        else:
+            input_embeddings = torch.cat([state_embeddings, image_embeddings, boa_embeddings], dim=2)
         input_embeddings = rearrange(input_embeddings, 'b l n d -> b (l n) d')
         input_embeddings = input_embeddings + frame_pe
+
+        if past_input_embeddings is not None:
+            input_embeddings = torch.cat([
+                past_input_embeddings.to(device=self.device, dtype=self.dtype),
+                input_embeddings,
+            ], dim=1)
 
         return input_embeddings, None

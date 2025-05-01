@@ -5,8 +5,6 @@
     ```sh
     conda create -n dvg python=3.10 -y
     conda activate dvg
-    conda install pytorch==2.4.1 torchvision==0.19.1 torchaudio==2.4.1 pytorch-cuda=12.1 -c pytorch -c nvidia -y
-    conda install -c conda-forge ffmpeg -y
     conda install pytorch=2.1.0 torchvision=0.16.0 torchaudio=2.1.0 pytorch-cuda=11.8 -c pytorch -c nvidia -y
     conda install -c conda-forge ffmpeg -y
     wget https://github.com/state-spaces/mamba/releases/download/v2.2.4/mamba_ssm-2.2.4+cu11torch2.1cxx11abiFALSE-cp310-cp310-linux_x86_64.whl
